@@ -1,7 +1,7 @@
 {
   "productName": "Meet Scribe",
   "version": "0.1.0",
-  "identifier": "com.beehyv.meet-scribe",
+  "identifier": "com.srprasanna.meet-scribe",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",

@@ -173,8 +173,8 @@ meet-scribe/
 ### Testing Database
 
 Once the app runs, the database will be created at:
-- **Windows**: `%APPDATA%\com.beehyv.meet-scribe\meet-scribe.db`
-- **Linux**: `~/.local/share/com.beehyv.meet-scribe/meet-scribe.db`
+- **Windows**: `%APPDATA%\com.srprasanna.meet-scribe\meet-scribe.db`
+- **Linux**: `~/.local/share/com.srprasanna.meet-scribe/meet-scribe.db`
 
 You can inspect it with any SQLite browser.
 

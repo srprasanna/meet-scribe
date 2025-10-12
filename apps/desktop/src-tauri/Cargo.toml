@@ -2,7 +2,7 @@
 name = "meet-scribe"
 version = "0.1.0"
 description = "Bot-free meeting assistant for Windows and Linux"
-authors = ["Beehyv"]
+authors = ["srprasanna"]
 edition = "2021"
 
 [build-dependencies]

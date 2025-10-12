@@ -244,9 +244,9 @@ npm run tauri build
 ### Database
 ```bash
 # Database file location (after first run):
-# Windows: %APPDATA%/com.beehyv.meet-scribe/meet-scribe.db
-# macOS: ~/Library/Application Support/com.beehyv.meet-scribe/meet-scribe.db
-# Linux: ~/.local/share/com.beehyv.meet-scribe/meet-scribe.db
+# Windows: %APPDATA%/com.srprasanna.meet-scribe/meet-scribe.db
+# macOS: ~/Library/Application Support/com.srprasanna.meet-scribe/meet-scribe.db
+# Linux: ~/.local/share/com.srprasanna.meet-scribe/meet-scribe.db
 
 # Migrations are in: apps/desktop/src-tauri/migrations/
 # They run automatically on app startup via rusqlite_migration
@@ -346,7 +346,7 @@ CREATE TABLE service_configs (
 ```
 
 **Note**: API keys are stored in OS keychain, not in the database. The keychain entry format is:
-- Service: `com.beehyv.meet-scribe`
+- Service: `com.srprasanna.meet-scribe`
 - Account: `{service_type}_{provider}` (e.g., `asr_deepgram`, `llm_anthropic`)
 
 ## Security & Privacy
@@ -354,7 +354,7 @@ CREATE TABLE service_configs (
 **API Key Storage**:
 - API keys MUST be stored in OS keychain using the `keyring` crate
 - Never store API keys in SQLite, config files, or environment variables
-- Keychain service name: `com.beehyv.meet-scribe`
+- Keychain service name: `com.srprasanna.meet-scribe`
 - Keychain account format: `{service_type}_{provider}` (e.g., `asr_deepgram`)
 
 **Data Storage**:

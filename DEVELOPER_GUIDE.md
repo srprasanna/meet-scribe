@@ -225,10 +225,10 @@ kill <PID>
 ### Database is corrupt
 ```bash
 # Windows
-del "%APPDATA%\com.beehyv.meet-scribe\meet-scribe.db"
+del "%APPDATA%\com.srprasanna.meet-scribe\meet-scribe.db"
 
 # Linux
-rm ~/.local/share/com.beehyv.meet-scribe/meet-scribe.db
+rm ~/.local/share/com.srprasanna.meet-scribe/meet-scribe.db
 ```
 
 ### Clean rebuild
@@ -305,7 +305,7 @@ npm run dev
 # Linux: sudo apt install sqlite3
 
 # Open database
-sqlite3 %APPDATA%/com.beehyv.meet-scribe/meet-scribe.db
+sqlite3 %APPDATA%/com.srprasanna.meet-scribe/meet-scribe.db
 
 # Commands
 .tables              # List tables

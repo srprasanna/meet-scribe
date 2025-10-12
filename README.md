@@ -27,7 +27,7 @@ npm run tauri build
 **Debug locations:**
 - Frontend: Right-click → Inspect Element (Ctrl+Shift+I)
 - Backend: Use `println!()` or VS Code + CodeLLDB extension
-- Database: `%APPDATA%\com.beehyv.meet-scribe\meet-scribe.db` (Windows) or `~/.local/share/com.beehyv.meet-scribe/` (Linux)
+- Database: `%APPDATA%\com.srprasanna.meet-scribe\meet-scribe.db` (Windows) or `~/.local/share/com.srprasanna.meet-scribe/` (Linux)
 
 ---
 
@@ -553,10 +553,10 @@ npx @tauri-apps/cli icon app-icon.svg
 ```bash
 # Delete database and restart
 # Windows
-del "%APPDATA%\com.beehyv.meet-scribe\meet-scribe.db"
+del "%APPDATA%\com.srprasanna.meet-scribe\meet-scribe.db"
 
 # Linux
-rm ~/.local/share/com.beehyv.meet-scribe/meet-scribe.db
+rm ~/.local/share/com.srprasanna.meet-scribe/meet-scribe.db
 
 # Database will be recreated on next app start
 ```
@@ -655,8 +655,8 @@ npm run tauri build
 #### Database Location
 
 Find your database file:
-- **Windows:** `%APPDATA%\com.beehyv.meet-scribe\meet-scribe.db`
-- **Linux:** `~/.local/share/com.beehyv.meet-scribe/meet-scribe.db`
+- **Windows:** `%APPDATA%\com.srprasanna.meet-scribe\meet-scribe.db`
+- **Linux:** `~/.local/share/com.srprasanna.meet-scribe/meet-scribe.db`
 
 View with SQLite browser:
 ```bash
@@ -703,7 +703,9 @@ See [CLAUDE.md](CLAUDE.md) for detailed development guidelines.
 
 ## License
 
-[Add your license here]
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+Copyright (c) 2025 Prasanna Sambandam Raghu
 
 ## Support
 

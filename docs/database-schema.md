@@ -120,7 +120,7 @@ Stores configuration for ASR and LLM services.
 - macOS: Keychain (when macOS support is added)
 
 Keychain entry format:
-- **Service:** `com.beehyv.meet-scribe`
+- **Service:** `com.srprasanna.meet-scribe`
 - **Account:** `{service_type}_{provider}` (e.g., `asr_deepgram`, `llm_anthropic`)
 
 ## Migration Strategy
