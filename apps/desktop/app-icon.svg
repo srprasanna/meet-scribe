@@ -1,0 +1,6 @@
+<svg width="1024" height="1024" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="1024" fill="#2c3e50"/>
+  <circle cx="512" cy="400" r="150" fill="#3498db"/>
+  <rect x="412" y="550" width="200" height="300" rx="20" fill="#3498db"/>
+  <text x="512" y="900" font-size="120" font-weight="bold" text-anchor="middle" fill="white">MS</text>
+</svg>
