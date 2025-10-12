@@ -2,6 +2,35 @@
 
 A bot-free desktop meeting assistant for Windows and Linux that captures, transcribes, and generates insights from Teams, Zoom, and Google Meet meetings.
 
+---
+
+## Quick Start for Developers
+
+```bash
+# 1. Clone and setup
+git clone <repo-url>
+cd meet-scribe/apps/desktop
+npm install
+
+# 2. Generate icons (required for Windows)
+npx @tauri-apps/cli icon app-icon.svg
+
+# 3. Run in debug mode
+npm run tauri dev
+
+# 4. Build executable
+npm run tauri build
+```
+
+**First build takes 5-10 minutes** (downloads Rust dependencies). Subsequent builds: ~30-60 seconds.
+
+**Debug locations:**
+- Frontend: Right-click → Inspect Element (Ctrl+Shift+I)
+- Backend: Use `println!()` or VS Code + CodeLLDB extension
+- Database: `%APPDATA%\com.beehyv.meet-scribe\meet-scribe.db` (Windows) or `~/.local/share/com.beehyv.meet-scribe/` (Linux)
+
+---
+
 ## Overview
 
 Meet Scribe uses system-level audio capture (no bots joining meetings) to record, transcribe with speaker diarization, and generate AI-powered insights from your meetings. All data stays local on your machine.
