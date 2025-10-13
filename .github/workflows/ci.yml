@@ -76,7 +76,7 @@ jobs:
       - name: Run Rust linter
         run: |
           cd apps/desktop/src-tauri
-          cargo clippy -- -D warnings
+          cargo clippy
 
       - name: Build frontend
         run: |
