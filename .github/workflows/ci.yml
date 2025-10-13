@@ -63,7 +63,9 @@ jobs:
 
       - name: Run Rust tests
         run: |
-          cd apps/desktop/src-tauri
+          cd apps/desktop
+          npm run tauri:build --verbose
+          cd src-tauri
           cargo test --verbose
 
       - name: Check Rust formatting
