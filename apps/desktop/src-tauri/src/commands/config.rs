@@ -2,6 +2,7 @@
 
 use crate::domain::models::{ServiceConfig, ServiceType};
 use crate::ports::storage::StoragePort;
+use crate::utils::keychain::KeychainPort;
 use crate::AppState;
 use serde::{Deserialize, Serialize};
 

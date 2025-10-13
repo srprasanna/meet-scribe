@@ -96,16 +96,15 @@ src/
 
 ### ✅ Completed
 
-1. **Keychain Module Tests** (`keychain_tests.rs`)
+1. **Keychain Module Tests** (`utils/keychain.rs`)
+   - ✅ MockKeychain implementation for CI testing
    - ✅ Save and retrieve API keys
    - ✅ Delete API keys
    - ✅ Check key existence
    - ✅ Overwrite keys
    - ✅ Multiple providers
-   - ✅ Special characters
-   - ✅ Long keys
-   - ✅ Empty keys
    - ✅ Nonexistent keys
+   - ✅ OS keychain tests (marked with `#[ignore]` for CI, run manually locally)
 
 2. **Mock Storage Implementation** (`ports/mocks.rs`)
    - ✅ In-memory storage for testing
@@ -214,6 +213,49 @@ describe('Settings Page', () => {
 ```
 
 ## Mocking Strategies
+
+### Mocking OS Keychain
+
+The keychain module uses a trait-based approach to allow mocking OS keychain functionality:
+
+```rust
+// KeychainPort trait allows for swapping implementations
+pub trait KeychainPort: Send + Sync {
+    fn save_api_key(&self, service_type: &str, provider: &str, api_key: &str) -> Result<()>;
+    fn get_api_key(&self, service_type: &str, provider: &str) -> Result<String>;
+    fn delete_api_key(&self, service_type: &str, provider: &str) -> Result<()>;
+    fn has_api_key(&self, service_type: &str, provider: &str) -> bool;
+}
+
+// Real implementation using OS keychain
+impl KeychainPort for KeychainManager { /* ... */ }
+
+// Mock implementation for testing (in-memory)
+impl KeychainPort for MockKeychain { /* ... */ }
+```
+
+**CI Testing Strategy**:
+- Tests using MockKeychain run in CI (no OS keychain required)
+- Tests using real KeychainManager are marked with `#[ignore]` and run manually
+- Run ignored tests locally with: `cargo test -- --ignored`
+
+Example test structure:
+```rust
+#[test]
+fn test_mock_save_and_retrieve() {
+    let mock = MockKeychain::new();
+    mock.save_api_key("asr", "deepgram", "key123").unwrap();
+    let retrieved = mock.get_api_key("asr", "deepgram").unwrap();
+    assert_eq!(retrieved, "key123");
+}
+
+#[test]
+#[ignore] // Requires OS keychain - skip in CI
+fn test_real_keychain() {
+    let keychain = KeychainManager::new();
+    // Test with actual OS keychain
+}
+```
 
 ### Mocking Tauri Commands
 
@@ -378,9 +420,16 @@ start apps/desktop/coverage/backend/index.html  # Windows
 
 ### Keychain Tests Failing
 
-- Keychain tests require OS-level permissions
-- May need to run with specific user context
-- Consider skip conditions for CI environments
+**In CI Environment**:
+- OS keychain tests are marked with `#[ignore]` and won't run in CI
+- Only MockKeychain tests run in CI (no OS permissions needed)
+- If CI still fails, verify MockKeychain tests are not trying to access OS keychain
+
+**Locally**:
+- OS keychain tests require proper permissions
+- On Linux: Ensure GNOME Keyring or KWallet is running
+- On Windows: Ensure you have permission to access Credential Manager
+- Run OS keychain tests with: `cargo test -- --ignored`
 
 ### Coverage Not 100%
 
