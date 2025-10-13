@@ -1,0 +1,22 @@
+{
+  "name": "meet-scribe",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bot-free desktop meeting assistant with transcription and AI insights",
+  "scripts": {
+    "bump:patch": "node scripts/bump-version.js patch",
+    "bump:minor": "node scripts/bump-version.js minor",
+    "bump:major": "node scripts/bump-version.js major",
+    "bump": "node scripts/bump-version.js",
+    "release:prepare": "npm run bump && git add -A && git commit -m \"chore: bump version\" && git push",
+    "dev": "cd apps/desktop && npm run tauri dev",
+    "build": "cd apps/desktop && npm run tauri build",
+    "test": "cd apps/desktop && npm test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/srprasanna/meet-scribe.git"
+  },
+  "author": "Prasanna S R",
+  "license": "MIT"
+}

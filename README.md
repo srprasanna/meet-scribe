@@ -401,6 +401,32 @@ Before distributing the executable:
 
 5. **Create changelog** for version
 
+### Automated Releases with GitHub Actions
+
+This project includes automated release workflows. See [docs/RELEASE.md](docs/RELEASE.md) for complete instructions.
+
+**Quick release process:**
+
+1. Bump version (from root directory):
+   ```bash
+   npm run bump:minor  # or bump:patch, bump:major
+   ```
+
+2. Update CHANGELOG.md with release notes
+
+3. Commit, tag, and push:
+   ```bash
+   git add -A
+   git commit -m "chore: release v1.2.3"
+   git tag v1.2.3
+   git push origin main --tags
+   ```
+
+4. GitHub Actions automatically:
+   - Builds Windows MSI installer
+   - Builds Linux DEB and AppImage packages
+   - Creates GitHub release with all binaries
+
 ### Optimizing Build Size
 
 If the executable is too large:
@@ -434,6 +460,13 @@ cargo fmt                      # Format Rust
 cargo clippy                   # Lint Rust
 npm run format                 # Format TypeScript
 npm run lint                   # Lint TypeScript
+
+# Version Management (from root directory)
+npm run bump:patch             # Bump patch version (0.1.0 -> 0.1.1)
+npm run bump:minor             # Bump minor version (0.1.0 -> 0.2.0)
+npm run bump:major             # Bump major version (0.1.0 -> 1.0.0)
+npm run bump 1.2.3             # Set specific version
+node scripts/bump-version.js   # Manual version bump script
 
 # Utilities
 cargo check                    # Fast compile check

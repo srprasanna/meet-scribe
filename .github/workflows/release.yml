@@ -1,0 +1,269 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Trigger on version tags like v1.0.0
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0)'
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Job to create or validate version tag
+  prepare-release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from tag or input
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            echo "version=${VERSION}" >> $GITHUB_OUTPUT
+            echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+            echo "version=${VERSION}" >> $GITHUB_OUTPUT
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Update version in all files
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+
+          # Update package.json
+          cd apps/desktop
+          npm version $VERSION --no-git-tag-version --allow-same-version
+
+          # Update tauri.conf.json
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+
+          # Update Cargo.toml
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+
+          # Update Cargo.lock
+          cd src-tauri
+          cargo update --package meet-scribe --precise $VERSION 2>/dev/null || cargo generate-lockfile
+          cd ../..
+
+      - name: Commit version bump
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add apps/desktop/package.json apps/desktop/package-lock.json apps/desktop/src-tauri/tauri.conf.json apps/desktop/src-tauri/Cargo.toml apps/desktop/src-tauri/Cargo.lock
+          git commit -m "chore: bump version to ${{ steps.get_version.outputs.version }}"
+          git tag ${{ steps.get_version.outputs.tag }}
+          git push origin main
+          git push origin ${{ steps.get_version.outputs.tag }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get_version.outputs.tag }}
+          release_name: Release ${{ steps.get_version.outputs.tag }}
+          draft: false
+          prerelease: false
+          body: |
+            ## Meet Scribe ${{ steps.get_version.outputs.version }}
+
+            ### Downloads
+            - **Windows**: `meet-scribe_${{ steps.get_version.outputs.version }}_x64_en-US.msi`
+            - **Linux**: `meet-scribe_${{ steps.get_version.outputs.version }}_amd64.deb` or `meet-scribe_${{ steps.get_version.outputs.version }}_amd64.AppImage`
+
+            ### Installation
+
+            **Windows:**
+            1. Download the `.msi` installer
+            2. Double-click to install
+            3. Follow the installation wizard
+
+            **Linux (Debian/Ubuntu):**
+            ```bash
+            sudo dpkg -i meet-scribe_${{ steps.get_version.outputs.version }}_amd64.deb
+            ```
+
+            **Linux (AppImage):**
+            ```bash
+            chmod +x meet-scribe_${{ steps.get_version.outputs.version }}_amd64.AppImage
+            ./meet-scribe_${{ steps.get_version.outputs.version }}_amd64.AppImage
+            ```
+
+            ### Changes
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+
+  # Build for Windows
+  build-windows:
+    needs: prepare-release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Install dependencies
+        run: |
+          cd apps/desktop
+          npm ci
+
+      - name: Build frontend
+        run: |
+          cd apps/desktop
+          npm run build
+
+      - name: Build Tauri app
+        run: |
+          cd apps/desktop
+          npm run tauri build
+        env:
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+
+      - name: List build artifacts
+        run: |
+          cd apps/desktop/src-tauri/target/release/bundle
+          dir /s /b
+
+      - name: Upload Windows MSI
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.prepare-release.outputs.upload_url }}
+          asset_path: apps/desktop/src-tauri/target/release/bundle/msi/meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi
+          asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi
+          asset_content_type: application/x-msi
+
+      - name: Upload Windows MSI (alternative path)
+        if: failure()
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.prepare-release.outputs.upload_url }}
+          asset_path: apps/desktop/src-tauri/target/release/bundle/msi/Meet Scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi
+          asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi
+          asset_content_type: application/x-msi
+
+  # Build for Linux
+  build-linux:
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libpulse-dev
+
+      - name: Install dependencies
+        run: |
+          cd apps/desktop
+          npm ci
+
+      - name: Build frontend
+        run: |
+          cd apps/desktop
+          npm run build
+
+      - name: Build Tauri app
+        run: |
+          cd apps/desktop
+          npm run tauri build
+        env:
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+
+      - name: List build artifacts
+        run: |
+          cd apps/desktop/src-tauri/target/release/bundle
+          ls -lR
+
+      - name: Upload Linux DEB
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.prepare-release.outputs.upload_url }}
+          asset_path: apps/desktop/src-tauri/target/release/bundle/deb/meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.deb
+          asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.deb
+          asset_content_type: application/vnd.debian.binary-package
+
+      - name: Upload Linux AppImage
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.prepare-release.outputs.upload_url }}
+          asset_path: apps/desktop/src-tauri/target/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage
+          asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage
+          asset_content_type: application/octet-stream

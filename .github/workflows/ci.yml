@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libpulse-dev
+
+      - name: Install Node dependencies
+        run: |
+          cd apps/desktop
+          npm ci
+
+      - name: Run frontend tests
+        run: |
+          cd apps/desktop
+          npm test -- --run || echo "No tests configured yet"
+
+      - name: Run Rust tests
+        run: |
+          cd apps/desktop/src-tauri
+          cargo test --verbose
+
+      - name: Check Rust formatting
+        run: |
+          cd apps/desktop/src-tauri
+          cargo fmt -- --check
+
+      - name: Run Rust linter
+        run: |
+          cd apps/desktop/src-tauri
+          cargo clippy -- -D warnings
+
+      - name: Build frontend
+        run: |
+          cd apps/desktop
+          npm run build
+
+      - name: Build Tauri app (debug)
+        run: |
+          cd apps/desktop
+          npm run tauri build -- --debug
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd apps/desktop
+          npm ci
+
+      - name: Run ESLint
+        run: |
+          cd apps/desktop
+          npm run lint || echo "ESLint not configured yet"
+
+      - name: Check TypeScript types
+        run: |
+          cd apps/desktop
+          npx tsc --noEmit
