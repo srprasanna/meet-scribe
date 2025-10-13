@@ -2,19 +2,23 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod adapters;
+mod commands;
 mod domain;
 mod error;
 mod ports;
+mod utils;
 
 use adapters::storage::SqliteStorage;
 use error::Result;
 use ports::storage::StoragePort;
 use std::sync::Arc;
 use tauri::Manager;
+use utils::keychain::KeychainManager;
 
 /// Application state shared across Tauri commands
 pub struct AppState {
     pub storage: Arc<SqliteStorage>,
+    pub keychain: Arc<KeychainManager>,
 }
 
 /// Initialize the application
@@ -39,6 +43,7 @@ fn initialize_app(app: &tauri::AppHandle) -> Result<AppState> {
 
     Ok(AppState {
         storage: Arc::new(storage),
+        keychain: Arc::new(KeychainManager::new()),
     })
 }
 
@@ -59,6 +64,9 @@ async fn check_db_health(state: tauri::State<'_, AppState>) -> std::result::Resu
 }
 
 fn main() {
+    // Initialize logger
+    env_logger::init();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
@@ -67,7 +75,18 @@ fn main() {
             app.manage(state);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_version, check_db_health])
+        .invoke_handler(tauri::generate_handler![
+            get_version,
+            check_db_health,
+            commands::config::save_api_key,
+            commands::config::get_api_key_status,
+            commands::config::delete_api_key,
+            commands::config::save_service_config,
+            commands::config::get_service_config,
+            commands::config::get_active_service_config,
+            commands::config::list_service_configs,
+            commands::config::activate_service,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

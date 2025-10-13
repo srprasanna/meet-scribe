@@ -92,12 +92,7 @@ pub struct Transcript {
 
 impl Transcript {
     /// Creates a new transcript segment
-    pub fn new(
-        meeting_id: i64,
-        timestamp_ms: i64,
-        text: String,
-        confidence: Option<f32>,
-    ) -> Self {
+    pub fn new(meeting_id: i64, timestamp_ms: i64, text: String, confidence: Option<f32>) -> Self {
         Self {
             id: None,
             meeting_id,
@@ -198,5 +193,17 @@ impl ServiceConfig {
             created_at: now,
             updated_at: now,
         }
+    }
+
+    /// Sets the active status (builder pattern)
+    pub fn with_active(mut self, is_active: bool) -> Self {
+        self.is_active = is_active;
+        self
+    }
+
+    /// Sets the settings JSON (builder pattern)
+    pub fn with_settings(mut self, settings: Option<String>) -> Self {
+        self.settings = settings;
+        self
     }
 }
