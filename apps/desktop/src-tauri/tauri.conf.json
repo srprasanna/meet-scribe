@@ -1,4 +1,5 @@
 {
+  "$schema": "https://schema.tauri.app/config/2",
   "productName": "Meet Scribe",
   "version": "0.1.0",
   "identifier": "com.srprasanna.meet-scribe",
@@ -14,6 +15,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Meet Scribe",
         "width": 1280,
         "height": 800,

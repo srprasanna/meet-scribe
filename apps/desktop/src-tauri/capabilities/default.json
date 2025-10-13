@@ -1,1 +1,9 @@
-{}
+{
+  "identifier": "default",
+  "description": "Default permissions for Meet Scribe",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open"
+  ]
+}
