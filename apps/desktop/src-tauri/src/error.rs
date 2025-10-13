@@ -21,6 +21,9 @@ pub enum AppError {
     #[error("Keychain error: {0}")]
     Keychain(#[from] keyring::Error),
 
+    #[error("Keychain error: {0}")]
+    KeychainError(String),
+
     #[error("Audio capture error: {0}")]
     AudioCapture(String),
 

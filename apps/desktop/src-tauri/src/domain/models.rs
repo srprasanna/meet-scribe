@@ -199,4 +199,16 @@ impl ServiceConfig {
             updated_at: now,
         }
     }
+
+    /// Sets the active status (builder pattern)
+    pub fn with_active(mut self, is_active: bool) -> Self {
+        self.is_active = is_active;
+        self
+    }
+
+    /// Sets the settings JSON (builder pattern)
+    pub fn with_settings(mut self, settings: Option<String>) -> Self {
+        self.settings = settings;
+        self
+    }
 }
