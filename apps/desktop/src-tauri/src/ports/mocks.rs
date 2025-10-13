@@ -44,11 +44,7 @@ impl StoragePort for MockStorage {
         Ok(self.meetings.lock().unwrap().get(&id).cloned())
     }
 
-    async fn list_meetings(
-        &self,
-        limit: Option<i32>,
-        offset: Option<i32>,
-    ) -> Result<Vec<Meeting>> {
+    async fn list_meetings(&self, limit: Option<i32>, offset: Option<i32>) -> Result<Vec<Meeting>> {
         let meetings = self.meetings.lock().unwrap();
         let mut list: Vec<_> = meetings.values().cloned().collect();
         list.sort_by_key(|m| -m.start_time);
@@ -193,10 +189,7 @@ impl StoragePort for MockStorage {
             .cloned())
     }
 
-    async fn get_active_service_config(
-        &self,
-        service_type: &str,
-    ) -> Result<Option<ServiceConfig>> {
+    async fn get_active_service_config(&self, service_type: &str) -> Result<Option<ServiceConfig>> {
         Ok(self
             .service_configs
             .lock()

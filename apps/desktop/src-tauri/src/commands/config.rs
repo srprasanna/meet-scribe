@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 /// Request to save an API key
 #[derive(Debug, Deserialize)]
 pub struct SaveApiKeyRequest {
-    pub service_type: String,  // "asr" or "llm"
-    pub provider: String,       // "deepgram", "assemblyai", "openai", etc.
+    pub service_type: String, // "asr" or "llm"
+    pub provider: String,     // "deepgram", "assemblyai", "openai", etc.
     pub api_key: String,
 }
 
@@ -25,7 +25,7 @@ pub struct GetApiKeyRequest {
 #[derive(Debug, Serialize)]
 pub struct ApiKeyStatus {
     pub has_key: bool,
-    pub masked_key: Option<String>,  // Shows last 4 chars: "sk-...abc123"
+    pub masked_key: Option<String>, // Shows last 4 chars: "sk-...abc123"
 }
 
 /// Request to save service configuration
@@ -34,7 +34,7 @@ pub struct SaveServiceConfigRequest {
     pub service_type: String,
     pub provider: String,
     pub is_active: bool,
-    pub settings: Option<String>,  // JSON string of provider-specific settings
+    pub settings: Option<String>, // JSON string of provider-specific settings
 }
 
 /// Response with service configuration
@@ -190,9 +190,7 @@ pub async fn get_active_service_config(
 
     match config {
         Some(cfg) => {
-            let has_api_key = state
-                .keychain
-                .has_api_key(&service_type, &cfg.provider);
+            let has_api_key = state.keychain.has_api_key(&service_type, &cfg.provider);
 
             Ok(Some(ServiceConfigResponse {
                 id: cfg.id,
@@ -221,9 +219,7 @@ pub async fn list_service_configs(
     let mut responses = Vec::new();
     for cfg in configs {
         let service_type_str = format!("{:?}", cfg.service_type).to_lowercase();
-        let has_api_key = state
-            .keychain
-            .has_api_key(&service_type_str, &cfg.provider);
+        let has_api_key = state.keychain.has_api_key(&service_type_str, &cfg.provider);
 
         responses.push(ServiceConfigResponse {
             id: cfg.id,

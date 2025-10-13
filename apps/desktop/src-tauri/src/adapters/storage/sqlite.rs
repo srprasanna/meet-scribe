@@ -38,9 +38,9 @@ impl SqliteStorage {
         ))]);
 
         let mut conn = self.conn.lock().unwrap();
-        migrations
-            .to_latest(&mut conn)
-            .map_err(|e| AppError::Database(rusqlite::Error::ToSqlConversionFailure(Box::new(e))))?;
+        migrations.to_latest(&mut conn).map_err(|e| {
+            AppError::Database(rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
+        })?;
 
         Ok(())
     }

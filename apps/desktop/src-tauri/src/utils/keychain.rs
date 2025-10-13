@@ -155,7 +155,10 @@ mod tests {
 
         // Retrieve API key
         let retrieve_result = manager.get_api_key(service_type, provider);
-        assert!(retrieve_result.is_ok(), "Should retrieve API key successfully");
+        assert!(
+            retrieve_result.is_ok(),
+            "Should retrieve API key successfully"
+        );
         assert_eq!(
             retrieve_result.unwrap(),
             api_key,
@@ -310,7 +313,10 @@ mod tests {
 
         // Retrieve API key
         let retrieve_result = mock.get_api_key(service_type, provider);
-        assert!(retrieve_result.is_ok(), "Should retrieve API key successfully");
+        assert!(
+            retrieve_result.is_ok(),
+            "Should retrieve API key successfully"
+        );
         assert_eq!(
             retrieve_result.unwrap(),
             api_key,

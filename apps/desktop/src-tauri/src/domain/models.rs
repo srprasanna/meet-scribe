@@ -92,12 +92,7 @@ pub struct Transcript {
 
 impl Transcript {
     /// Creates a new transcript segment
-    pub fn new(
-        meeting_id: i64,
-        timestamp_ms: i64,
-        text: String,
-        confidence: Option<f32>,
-    ) -> Self {
+    pub fn new(meeting_id: i64, timestamp_ms: i64, text: String, confidence: Option<f32>) -> Self {
         Self {
             id: None,
             meeting_id,

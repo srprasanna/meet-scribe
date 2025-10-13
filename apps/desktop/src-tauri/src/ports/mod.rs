@@ -2,7 +2,6 @@
 ///
 /// These traits define the contracts for adapters to implement.
 /// Following the ports-and-adapters (hexagonal) architecture pattern.
-
 pub mod audio;
 pub mod llm;
 pub mod storage;
