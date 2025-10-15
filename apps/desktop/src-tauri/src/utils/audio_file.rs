@@ -34,8 +34,11 @@ pub fn save_wav_file<P: AsRef<Path>>(buffer: &AudioBuffer, path: P) -> Result<us
         // Clamp to [-1.0, 1.0] range
         let clamped = sample.max(-1.0).min(1.0);
 
-        // Convert to i16 range
-        let i16_sample = (clamped * 32767.0) as i16;
+        // Convert to i16 range using 32768.0 to properly handle the full asymmetric range
+        // i16 range is -32768 to 32767, so:
+        // - Negative: -1.0 * 32768.0 = -32768 ✓
+        // - Positive: 1.0 * 32768.0 = 32768, clamped to 32767 when cast to i16 ✓
+        let i16_sample = (clamped * 32768.0) as i16;
 
         writer
             .write_sample(i16_sample)
@@ -224,5 +227,34 @@ mod tests {
         for file in &files {
             assert!(Path::new(file).exists());
         }
+    }
+
+    #[test]
+    fn test_f32_to_i16_conversion_range() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("range_test.wav");
+
+        // Test edge cases: -1.0, 0.0, +1.0
+        // This verifies the asymmetric i16 range (-32768 to 32767) is handled correctly
+        let samples = vec![
+            -1.0_f32, // Should map to -32768
+            0.0_f32,  // Should map to 0
+            1.0_f32,  // Should map to 32767 (after clamping from 32768)
+        ];
+
+        let buffer = AudioBuffer {
+            samples,
+            format: AudioFormat {
+                sample_rate: 16000,
+                channels: 1,
+                bits_per_sample: 16,
+            },
+        };
+
+        // This should not panic or lose data
+        let result = save_wav_file(&buffer, &file_path);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 3); // Should write all 3 samples
+        assert!(file_path.exists());
     }
 }

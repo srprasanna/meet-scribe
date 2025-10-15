@@ -11,7 +11,7 @@ use tauri::Manager;
 /// Request to start a new meeting
 #[derive(Debug, Deserialize)]
 pub struct StartMeetingRequest {
-    pub platform: String,  // "teams", "zoom", "meet"
+    pub platform: String, // "teams", "zoom", "meet"
     pub title: Option<String>,
 }
 
@@ -68,20 +68,35 @@ pub async fn start_meeting(
 
     log::info!("Created meeting with ID: {}", meeting_id);
 
-    // Start audio capture
-    let audio_capture_arc = Arc::clone(&state.audio_capture);
-    tokio::spawn(async move {
-        let mut audio_capture = audio_capture_arc.lock().await;
-        match audio_capture.start_capture(None).await {
-            Ok(_) => log::info!("Audio capture started"),
-            Err(e) => log::error!("Failed to start audio capture: {}", e),
+    // Start audio capture and wait for confirmation
+    // This ensures we only store the meeting ID if audio capture actually started
+    let mut audio_capture = state.audio_capture.lock().await;
+    match audio_capture.start_capture(None).await {
+        Ok(_) => {
+            log::info!(
+                "Audio capture started successfully for meeting {}",
+                meeting_id
+            );
+
+            // Store current meeting ID only after successful audio capture
+            *state.current_meeting_id.lock().await = Some(meeting_id);
+
+            Ok(meeting_id)
         }
-    });
+        Err(e) => {
+            log::error!("Failed to start audio capture: {}", e);
 
-    // Store current meeting ID
-    *state.current_meeting_id.lock().await = Some(meeting_id);
+            // Audio capture failed - delete the meeting record to maintain consistency
+            if let Err(delete_err) = state.storage.delete_meeting(meeting_id).await {
+                log::error!(
+                    "Failed to cleanup meeting record after audio capture failure: {}",
+                    delete_err
+                );
+            }
 
-    Ok(meeting_id)
+            Err(format!("Failed to start audio capture: {}", e))
+        }
+    }
 }
 
 /// Stop the current meeting and audio capture
@@ -98,14 +113,24 @@ pub async fn stop_meeting(
     let storage_arc = Arc::clone(&state.storage);
 
     tokio::spawn(async move {
-        let mut audio_capture = audio_capture_arc.lock().await;
-        if let Err(e) = audio_capture.stop_capture().await {
-            log::error!("Failed to stop audio capture: {}", e);
-            return;
-        }
+        // Get the audio buffer BEFORE releasing the mutex
+        // This ensures we extract the data while holding the lock, then release it
+        // before doing slow file I/O operations
+        let buffer_result = {
+            let mut audio_capture = audio_capture_arc.lock().await;
 
-        // Get audio buffer and save to WAV file
-        match audio_capture.get_audio_buffer().await {
+            // Stop capture
+            if let Err(e) = audio_capture.stop_capture().await {
+                log::error!("Failed to stop audio capture: {}", e);
+                return;
+            }
+
+            // Get audio buffer - this is quick, just moving data
+            audio_capture.get_audio_buffer().await
+        }; // Mutex is released here, before slow file operations
+
+        // Now perform slow file I/O operations without holding the mutex
+        match buffer_result {
             Ok(Some(buffer)) => {
                 // Get app data directory for secure storage
                 let app_data_dir = match app.path().app_data_dir() {
@@ -126,9 +151,14 @@ pub async fn stop_meeting(
                 // Save audio file with meeting ID for uniqueness
                 let audio_file = audio_dir.join(format!("meeting_{}.wav", meeting_id));
 
+                // File I/O happens here - potentially slow, but mutex is NOT held
                 match crate::utils::audio_file::save_wav_file(&buffer, &audio_file) {
                     Ok(samples_written) => {
-                        log::info!("Saved {} samples to secure location: {}", samples_written, audio_file.display());
+                        log::info!(
+                            "Saved {} samples to secure location: {}",
+                            samples_written,
+                            audio_file.display()
+                        );
 
                         // Store audio file path in database
                         let file_path_str = audio_file.to_string_lossy().to_string();
@@ -136,7 +166,10 @@ pub async fn stop_meeting(
                             Ok(Some(mut meeting)) => {
                                 meeting.audio_file_path = Some(file_path_str);
                                 if let Err(e) = storage_arc.update_meeting(&meeting).await {
-                                    log::error!("Failed to update meeting with audio file path: {}", e);
+                                    log::error!(
+                                        "Failed to update meeting with audio file path: {}",
+                                        e
+                                    );
                                 }
                             }
                             Ok(None) => {
@@ -186,7 +219,9 @@ pub async fn stop_meeting(
 
 /// Get current meeting status
 #[tauri::command]
-pub async fn get_meeting_status(state: tauri::State<'_, AppState>) -> Result<MeetingStatus, String> {
+pub async fn get_meeting_status(
+    state: tauri::State<'_, AppState>,
+) -> Result<MeetingStatus, String> {
     let current_meeting_id = *state.current_meeting_id.lock().await;
 
     if let Some(meeting_id) = current_meeting_id {
@@ -237,7 +272,9 @@ pub async fn get_meeting_status(state: tauri::State<'_, AppState>) -> Result<Mee
 
 /// Get audio capture status
 #[tauri::command]
-pub async fn get_audio_capture_status(state: tauri::State<'_, AppState>) -> Result<AudioCaptureStatus, String> {
+pub async fn get_audio_capture_status(
+    state: tauri::State<'_, AppState>,
+) -> Result<AudioCaptureStatus, String> {
     let audio_capture = state.audio_capture.lock().await;
     let is_capturing = audio_capture.is_capturing();
     let format = audio_capture.get_format();
@@ -284,7 +321,10 @@ pub async fn get_meeting_history(
 
 /// Get a specific meeting by ID
 #[tauri::command]
-pub async fn get_meeting(state: tauri::State<'_, AppState>, meeting_id: i64) -> Result<Meeting, String> {
+pub async fn get_meeting(
+    state: tauri::State<'_, AppState>,
+    meeting_id: i64,
+) -> Result<Meeting, String> {
     state
         .storage
         .get_meeting(meeting_id)
@@ -295,7 +335,10 @@ pub async fn get_meeting(state: tauri::State<'_, AppState>, meeting_id: i64) -> 
 
 /// Delete a meeting
 #[tauri::command]
-pub async fn delete_meeting(state: tauri::State<'_, AppState>, meeting_id: i64) -> Result<(), String> {
+pub async fn delete_meeting(
+    state: tauri::State<'_, AppState>,
+    meeting_id: i64,
+) -> Result<(), String> {
     state
         .storage
         .delete_meeting(meeting_id)

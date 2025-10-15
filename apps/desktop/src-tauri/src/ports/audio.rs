@@ -22,8 +22,8 @@ pub struct AudioFormat {
 impl Default for AudioFormat {
     fn default() -> Self {
         Self {
-            sample_rate: 16000, // Placeholder - actual format set during capture
-            channels: 1,        // Placeholder - actual format set during capture
+            sample_rate: 16000,  // Placeholder - actual format set during capture
+            channels: 1,         // Placeholder - actual format set during capture
             bits_per_sample: 16, // Placeholder - actual format set during capture
         }
     }

@@ -6,7 +6,7 @@
 use crate::error::{AppError, Result};
 use crate::ports::audio::{AudioBuffer, AudioCapturePort, AudioFormat};
 use async_trait::async_trait;
-use libpulse_simple_binding::{Simple, Direction, SampleSpec, SampleFormat, ChannelMap};
+use libpulse_simple_binding::{ChannelMap, Direction, SampleFormat, SampleSpec, Simple};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -86,7 +86,7 @@ impl AudioCapturePort for PulseAudioCapture {
             // Set up PulseAudio sample specification
             let spec = SampleSpec {
                 format: SampleFormat::S16LE, // 16-bit signed little-endian
-                channels: 2,                  // Stereo
+                channels: 2,                 // Stereo
                 rate: 44100,                 // 44.1 kHz
             };
 
@@ -100,14 +100,14 @@ impl AudioCapturePort for PulseAudioCapture {
             // Create a simple recording connection
             // Use monitor source to capture system audio output
             let simple = match Simple::new(
-                None,                          // Use default server
-                "Meet-Scribe",                // Application name
-                Direction::Record,            // Recording
-                Some(&device),                // Monitor source for system audio
-                "Audio Capture",              // Stream description
-                &spec,                        // Sample spec
-                None,                         // Use default channel map
-                None,                         // Use default buffering attributes
+                None,              // Use default server
+                "Meet-Scribe",     // Application name
+                Direction::Record, // Recording
+                Some(&device),     // Monitor source for system audio
+                "Audio Capture",   // Stream description
+                &spec,             // Sample spec
+                None,              // Use default channel map
+                None,              // Use default buffering attributes
             ) {
                 Ok(s) => s,
                 Err(e) => {
@@ -119,7 +119,11 @@ impl AudioCapturePort for PulseAudioCapture {
 
             log::info!("PulseAudio capture initialized successfully");
             log::info!("Device: {}", device);
-            log::info!("Format: {} Hz, {} channels, 16-bit", spec.rate, spec.channels);
+            log::info!(
+                "Format: {} Hz, {} channels, 16-bit",
+                spec.rate,
+                spec.channels
+            );
 
             // Buffer for reading samples (1024 frames at a time)
             let buffer_size = 1024 * spec.channels as usize * 2; // 2 bytes per sample (16-bit)
@@ -171,8 +175,12 @@ impl AudioCapturePort for PulseAudioCapture {
         // Update our format from the initialized format
         self.format = format_info.lock().unwrap().clone();
 
-        log::info!("Audio capture started with format: {} Hz, {} channels, {} bits",
-            self.format.sample_rate, self.format.channels, self.format.bits_per_sample);
+        log::info!(
+            "Audio capture started with format: {} Hz, {} channels, {} bits",
+            self.format.sample_rate,
+            self.format.channels,
+            self.format.bits_per_sample
+        );
         Ok(())
     }
 
@@ -187,9 +195,9 @@ impl AudioCapturePort for PulseAudioCapture {
 
         // Wait for capture thread to finish
         if let Some(handle) = self.capture_handle.take() {
-            handle
-                .await
-                .map_err(|e| AppError::AudioCapture(format!("Failed to stop capture thread: {}", e)))?;
+            handle.await.map_err(|e| {
+                AppError::AudioCapture(format!("Failed to stop capture thread: {}", e))
+            })?;
         }
 
         log::info!("Audio capture stopped");
@@ -235,7 +243,7 @@ mod tests {
         // Before capture starts, format is the default placeholder
         // Actual format is set during start_capture() to: 44100 Hz, stereo, 16-bit
         assert_eq!(format.sample_rate, 16000); // Placeholder before capture
-        assert_eq!(format.channels, 1);         // Placeholder before capture
+        assert_eq!(format.channels, 1); // Placeholder before capture
         assert_eq!(format.bits_per_sample, 16); // Placeholder before capture
     }
 

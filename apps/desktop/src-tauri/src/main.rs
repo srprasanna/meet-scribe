@@ -16,10 +16,10 @@ use tauri::Manager;
 use tokio::sync::Mutex;
 use utils::keychain::KeychainManager;
 
-#[cfg(target_os = "windows")]
-use adapters::audio::WasapiAudioCapture;
 #[cfg(target_os = "linux")]
 use adapters::audio::PulseAudioCapture;
+#[cfg(target_os = "windows")]
+use adapters::audio::WasapiAudioCapture;
 
 #[cfg(target_os = "windows")]
 type AudioCapture = WasapiAudioCapture;

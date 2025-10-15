@@ -35,7 +35,9 @@ impl SqliteStorage {
 
         let migrations = Migrations::new(vec![
             M::up(include_str!("../../../migrations/001_initial.sql")),
-            M::up(include_str!("../../../migrations/002_add_audio_file_path.sql")),
+            M::up(include_str!(
+                "../../../migrations/002_add_audio_file_path.sql"
+            )),
         ]);
 
         let mut conn = self.conn.lock().unwrap();
