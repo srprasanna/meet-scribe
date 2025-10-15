@@ -1,5 +1,12 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  startTranscription,
+  getTranscriptionStatus,
+  getTranscripts,
+  isTranscriptionAvailable,
+} from "../api/transcription";
+import type { Transcript } from "../types";
 
 interface Meeting {
   id: number;
@@ -22,10 +29,42 @@ function MeetingHistory() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
+  const [transcriptionAvailable, setTranscriptionAvailable] = useState<boolean>(false);
+  const [transcribingMeetingId, setTranscribingMeetingId] = useState<number | null>(null);
+  const [transcripts, setTranscripts] = useState<{ [meetingId: number]: Transcript[] }>({});
 
   useEffect(() => {
     loadMeetings();
+    checkTranscriptionAvailability();
   }, []);
+
+  // Poll for transcription status every 3 seconds
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const status = await getTranscriptionStatus();
+        setTranscribingMeetingId(status);
+
+        // If transcription just completed, reload transcripts for that meeting
+        if (transcribingMeetingId !== null && status === null) {
+          await loadTranscriptsForMeeting(transcribingMeetingId);
+        }
+      } catch (err) {
+        console.error("Failed to check transcription status:", err);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [transcribingMeetingId]);
+
+  const checkTranscriptionAvailability = async () => {
+    try {
+      const available = await isTranscriptionAvailable();
+      setTranscriptionAvailable(available);
+    } catch (err) {
+      console.error("Failed to check transcription availability:", err);
+    }
+  };
 
   const loadMeetings = async () => {
     setLoading(true);
@@ -36,11 +75,43 @@ function MeetingHistory() {
         limit: 50,
       });
       setMeetings(history);
+
+      // Load transcripts for all meetings
+      for (const meeting of history) {
+        if (meeting.id && meeting.end_time) {
+          await loadTranscriptsForMeeting(meeting.id);
+        }
+      }
     } catch (err) {
       setError(`Failed to load meetings: ${err}`);
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadTranscriptsForMeeting = async (meetingId: number) => {
+    try {
+      const transcriptList = await getTranscripts(meetingId);
+      setTranscripts((prev) => ({ ...prev, [meetingId]: transcriptList }));
+    } catch (err) {
+      console.error(`Failed to load transcripts for meeting ${meetingId}:`, err);
+    }
+  };
+
+  const handleStartTranscription = async (meetingId: number) => {
+    if (!transcriptionAvailable) {
+      setError("Transcription service not configured. Please configure an ASR service in Settings.");
+      return;
+    }
+
+    try {
+      setError(null);
+      await startTranscription(meetingId);
+      setTranscribingMeetingId(meetingId);
+    } catch (err) {
+      setError(`Failed to start transcription: ${err}`);
+      console.error(err);
     }
   };
 
@@ -204,6 +275,50 @@ function MeetingHistory() {
                   </div>
 
                   <div style={{ display: "flex", gap: "8px" }}>
+                    {/* Transcription button - only show for completed meetings */}
+                    {meeting.end_time && (() => {
+                      const hasTranscripts = transcripts[meeting.id]?.length > 0;
+                      const isTranscribing = transcribingMeetingId === meeting.id;
+
+                      return (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!hasTranscripts && !isTranscribing) {
+                              handleStartTranscription(meeting.id);
+                            }
+                          }}
+                          disabled={!transcriptionAvailable || isTranscribing || hasTranscripts}
+                          style={{
+                            padding: "8px 16px",
+                            background: hasTranscripts
+                              ? "#28a745"
+                              : isTranscribing
+                              ? "#ffc107"
+                              : transcriptionAvailable
+                              ? "#6c757d"
+                              : "#d3d3d3",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "6px",
+                            cursor: transcriptionAvailable && !isTranscribing && !hasTranscripts ? "pointer" : "not-allowed",
+                            fontSize: "13px",
+                            opacity: !transcriptionAvailable ? 0.6 : 1,
+                          }}
+                          title={
+                            !transcriptionAvailable
+                              ? "Configure ASR service in Settings"
+                              : isTranscribing
+                              ? "Transcription in progress..."
+                              : hasTranscripts
+                              ? "Transcription complete"
+                              : "Start transcription"
+                          }
+                        >
+                          {isTranscribing ? "⏳ Transcribing..." : hasTranscripts ? "✓ Transcribed" : "📝 Transcribe"}
+                        </button>
+                      );
+                    })()}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -302,19 +417,120 @@ function MeetingHistory() {
             </div>
           </div>
 
-          <div
-            style={{
-              padding: "16px",
-              background: "#f9f9f9",
-              borderRadius: "6px",
-              textAlign: "center",
-              color: "#666",
-            }}
-          >
-            <p style={{ margin: 0 }}>
-              Full meeting details (transcript, insights, participants) will be available in Phase 3+
-            </p>
-          </div>
+          {/* Transcripts Section */}
+          {transcripts[selectedMeeting.id]?.length > 0 ? (
+            <div>
+              <h3 style={{ marginBottom: "12px", marginTop: "24px" }}>
+                Transcript ({transcripts[selectedMeeting.id].length} segments)
+              </h3>
+              <div
+                style={{
+                  maxHeight: "400px",
+                  overflowY: "auto",
+                  border: "1px solid #e0e0e0",
+                  borderRadius: "6px",
+                  padding: "16px",
+                  background: "#fafafa",
+                }}
+              >
+                {transcripts[selectedMeeting.id].map((transcript, index) => {
+                  const minutes = Math.floor(transcript.timestamp_ms / 60000);
+                  const seconds = Math.floor((transcript.timestamp_ms % 60000) / 1000);
+                  const timeStr = `${minutes}:${seconds.toString().padStart(2, "0")}`;
+
+                  return (
+                    <div
+                      key={transcript.id || index}
+                      style={{
+                        marginBottom: "16px",
+                        paddingBottom: "12px",
+                        borderBottom: index < transcripts[selectedMeeting.id].length - 1 ? "1px solid #e0e0e0" : "none",
+                      }}
+                    >
+                      <div style={{ display: "flex", gap: "8px", marginBottom: "6px", alignItems: "center" }}>
+                        <span
+                          style={{
+                            fontSize: "12px",
+                            color: "#666",
+                            fontFamily: "monospace",
+                            background: "#e0e0e0",
+                            padding: "2px 6px",
+                            borderRadius: "4px",
+                          }}
+                        >
+                          {timeStr}
+                        </span>
+                        {transcript.confidence && (
+                          <span
+                            style={{
+                              fontSize: "11px",
+                              color: "#888",
+                              background: "#f0f0f0",
+                              padding: "2px 6px",
+                              borderRadius: "4px",
+                            }}
+                          >
+                            {Math.round(transcript.confidence * 100)}% confidence
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: "14px", lineHeight: "1.6", color: "#333" }}>
+                        {transcript.text}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : transcribingMeetingId === selectedMeeting.id ? (
+            <div
+              style={{
+                padding: "24px",
+                background: "#fff8e1",
+                borderRadius: "6px",
+                textAlign: "center",
+                color: "#856404",
+                marginTop: "24px",
+                border: "1px solid #ffc107",
+              }}
+            >
+              <div style={{ fontSize: "32px", marginBottom: "8px" }}>⏳</div>
+              <p style={{ margin: 0, fontWeight: "500" }}>Transcription in progress...</p>
+              <p style={{ margin: "8px 0 0 0", fontSize: "13px" }}>
+                This may take a few minutes depending on meeting length
+              </p>
+            </div>
+          ) : selectedMeeting.end_time ? (
+            <div
+              style={{
+                padding: "16px",
+                background: "#f9f9f9",
+                borderRadius: "6px",
+                textAlign: "center",
+                color: "#666",
+                marginTop: "24px",
+              }}
+            >
+              <p style={{ margin: 0 }}>
+                {transcriptionAvailable
+                  ? "Click 'Transcribe' button to generate transcript with speaker diarization"
+                  : "Configure an ASR service (AssemblyAI or Deepgram) in Settings to enable transcription"}
+              </p>
+            </div>
+          ) : (
+            <div
+              style={{
+                padding: "16px",
+                background: "#f9f9f9",
+                borderRadius: "6px",
+                textAlign: "center",
+                color: "#666",
+                marginTop: "24px",
+              }}
+            >
+              <p style={{ margin: 0 }}>Meeting is still in progress. Transcription will be available after the meeting ends.</p>
+            </div>
+          )}
         </div>
       )}
     </div>

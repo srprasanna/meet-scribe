@@ -37,7 +37,7 @@ pub struct AppState {
 /// Initialize the application
 ///
 /// Sets up database connection and runs migrations.
-fn initialize_app(app: &tauri::AppHandle) -> Result<AppState> {
+fn initialize_app(app: &tauri::AppHandle) -> Result<(AppState, commands::transcription::TranscriptionState)> {
     // Get application data directory
     let app_dir = app
         .path()
@@ -54,12 +54,23 @@ fn initialize_app(app: &tauri::AppHandle) -> Result<AppState> {
     // Run migrations
     storage.run_migrations()?;
 
-    Ok(AppState {
-        storage: Arc::new(storage),
-        keychain: Arc::new(KeychainManager::new()),
+    let storage_arc = Arc::new(storage);
+    let keychain_arc = Arc::new(KeychainManager::new());
+
+    let app_state = AppState {
+        storage: Arc::clone(&storage_arc),
+        keychain: Arc::clone(&keychain_arc),
         audio_capture: Arc::new(Mutex::new(AudioCapture::new())),
         current_meeting_id: Arc::new(Mutex::new(None)),
-    })
+    };
+
+    let transcription_state = commands::transcription::TranscriptionState {
+        storage: Arc::clone(&storage_arc),
+        keychain: Arc::clone(&keychain_arc),
+        current_transcription: Arc::new(Mutex::new(None)),
+    };
+
+    Ok((app_state, transcription_state))
 }
 
 /// Example Tauri command - gets application version
@@ -86,8 +97,9 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             // Initialize app state
-            let state = initialize_app(app.handle())?;
-            app.manage(state);
+            let (app_state, transcription_state) = initialize_app(app.handle())?;
+            app.manage(app_state);
+            app.manage(transcription_state);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -111,6 +123,11 @@ fn main() {
             commands::meeting::get_meeting_history,
             commands::meeting::get_meeting,
             commands::meeting::delete_meeting,
+            // Transcription commands
+            commands::transcription::start_transcription,
+            commands::transcription::get_transcription_status,
+            commands::transcription::get_transcripts,
+            commands::transcription::is_transcription_available,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
