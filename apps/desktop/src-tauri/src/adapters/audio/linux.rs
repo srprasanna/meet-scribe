@@ -6,7 +6,9 @@
 use crate::error::{AppError, Result};
 use crate::ports::audio::{AudioBuffer, AudioCapturePort, AudioFormat};
 use async_trait::async_trait;
-use libpulse_simple_binding::{ChannelMap, Direction, SampleFormat, SampleSpec, Simple};
+use libpulse_binding::stream::Direction;
+use libpulse_binding::sample::{Format, Spec};
+use libpulse_simple_binding::Simple;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -84,16 +86,16 @@ impl AudioCapturePort for PulseAudioCapture {
         // Spawn background task for audio capture
         let handle = tokio::task::spawn_blocking(move || {
             // Set up PulseAudio sample specification
-            let spec = SampleSpec {
-                format: SampleFormat::S16LE, // 16-bit signed little-endian
-                channels: 2,                 // Stereo
-                rate: 44100,                 // 44.1 kHz
+            let spec = Spec {
+                format: Format::S16le, // 16-bit signed little-endian
+                channels: 2,           // Stereo
+                rate: 44100,           // 44.1 kHz
             };
 
             // Store the format
             *format_info_clone.lock().unwrap() = AudioFormat {
                 sample_rate: spec.rate,
-                channels: spec.channels,
+                channels: spec.channels as u16,
                 bits_per_sample: 16, // S16LE is 16-bit
             };
 
