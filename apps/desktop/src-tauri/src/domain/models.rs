@@ -31,6 +31,7 @@ pub struct Meeting {
     pub start_time: i64, // Unix timestamp
     pub end_time: Option<i64>,
     pub participant_count: Option<i32>,
+    pub audio_file_path: Option<String>, // Path to recorded audio file
     pub created_at: i64,
 }
 
@@ -45,6 +46,7 @@ impl Meeting {
             start_time: now,
             end_time: None,
             participant_count: None,
+            audio_file_path: None,
             created_at: now,
         }
     }

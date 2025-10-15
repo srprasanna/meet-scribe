@@ -13,12 +13,25 @@ use error::Result;
 use ports::storage::StoragePort;
 use std::sync::Arc;
 use tauri::Manager;
+use tokio::sync::Mutex;
 use utils::keychain::KeychainManager;
+
+#[cfg(target_os = "linux")]
+use adapters::audio::PulseAudioCapture;
+#[cfg(target_os = "windows")]
+use adapters::audio::WasapiAudioCapture;
+
+#[cfg(target_os = "windows")]
+type AudioCapture = WasapiAudioCapture;
+#[cfg(target_os = "linux")]
+type AudioCapture = PulseAudioCapture;
 
 /// Application state shared across Tauri commands
 pub struct AppState {
     pub storage: Arc<SqliteStorage>,
     pub keychain: Arc<KeychainManager>,
+    pub audio_capture: Arc<Mutex<AudioCapture>>,
+    pub current_meeting_id: Arc<Mutex<Option<i64>>>,
 }
 
 /// Initialize the application
@@ -44,6 +57,8 @@ fn initialize_app(app: &tauri::AppHandle) -> Result<AppState> {
     Ok(AppState {
         storage: Arc::new(storage),
         keychain: Arc::new(KeychainManager::new()),
+        audio_capture: Arc::new(Mutex::new(AudioCapture::new())),
+        current_meeting_id: Arc::new(Mutex::new(None)),
     })
 }
 
@@ -78,6 +93,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_version,
             check_db_health,
+            // Config commands
             commands::config::save_api_key,
             commands::config::get_api_key_status,
             commands::config::delete_api_key,
@@ -86,6 +102,15 @@ fn main() {
             commands::config::get_active_service_config,
             commands::config::list_service_configs,
             commands::config::activate_service,
+            // Meeting commands
+            commands::meeting::start_meeting,
+            commands::meeting::stop_meeting,
+            commands::meeting::get_meeting_status,
+            commands::meeting::get_audio_capture_status,
+            commands::meeting::list_audio_devices,
+            commands::meeting::get_meeting_history,
+            commands::meeting::get_meeting,
+            commands::meeting::delete_meeting,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
