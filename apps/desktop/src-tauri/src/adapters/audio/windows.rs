@@ -18,20 +18,30 @@ use windows::Win32::System::Com::{
 };
 
 /// Windows WASAPI audio capture implementation
+///
+/// Captures system audio output using WASAPI loopback mode.
+/// The audio format (sample rate, channels, bit depth) is auto-detected
+/// from the system's default audio device during `start_capture()`.
+///
+/// Typical Windows audio format: 48000 Hz, 2 channels, 32-bit float
 pub struct WasapiAudioCapture {
     is_capturing: Arc<Mutex<bool>>,
     audio_buffer: Arc<Mutex<Vec<f32>>>,
+    /// Audio format - placeholder until capture starts, then auto-detected
     format: AudioFormat,
     capture_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl WasapiAudioCapture {
     /// Creates a new WASAPI audio capture instance
+    ///
+    /// The format field is initialized to a default placeholder.
+    /// Actual format is detected when `start_capture()` is called.
     pub fn new() -> Self {
         Self {
             is_capturing: Arc::new(Mutex::new(false)),
             audio_buffer: Arc::new(Mutex::new(Vec::new())),
-            format: AudioFormat::default(),
+            format: AudioFormat::default(), // Placeholder, updated during start_capture()
             capture_handle: None,
         }
     }
@@ -61,9 +71,15 @@ impl WasapiAudioCapture {
     }
 
     /// Initialize the audio client with the desired format
-    fn initialize_audio_client(audio_client: &IAudioClient) -> Result<(WAVEFORMATEX, u16, u16)> {
+    ///
+    /// Queries the WASAPI device for its mix format and initializes the audio client
+    /// for loopback capture. Returns the detected format parameters which are used
+    /// to update the WasapiAudioCapture.format field.
+    ///
+    /// Returns: (WAVEFORMATEX, sample_rate, bits_per_sample)
+    fn initialize_audio_client(audio_client: &IAudioClient) -> Result<(WAVEFORMATEX, u32, u16)> {
         unsafe {
-            // Get the device's mix format
+            // Get the device's mix format (auto-detected from system)
             let mix_format_ptr = audio_client
                 .GetMixFormat()
                 .map_err(|e| AppError::AudioCapture(format!("Failed to get mix format: {}", e)))?;
@@ -73,8 +89,8 @@ impl WasapiAudioCapture {
             }
 
             let mix_format = *mix_format_ptr;
-            let sample_rate = mix_format.nSamplesPerSec as u16;
-            let bits_per_sample = mix_format.wBitsPerSample;
+            let sample_rate = mix_format.nSamplesPerSec;  // Actual system sample rate
+            let bits_per_sample = mix_format.wBitsPerSample;  // Actual bit depth
 
             // Initialize the audio client for loopback capture
             let buffer_duration = 10_000_000; // 1 second in 100-nanosecond units
@@ -236,18 +252,23 @@ impl AudioCapturePort for WasapiAudioCapture {
     }
 
     async fn start_capture(&mut self, _device_name: Option<String>) -> Result<()> {
-        let mut is_capturing = self.is_capturing.lock().unwrap();
-        if *is_capturing {
-            return Err(AppError::AudioCapture(
-                "Capture already in progress".to_string(),
-            ));
-        }
+        {
+            let mut is_capturing = self.is_capturing.lock().unwrap();
+            if *is_capturing {
+                return Err(AppError::AudioCapture(
+                    "Capture already in progress".to_string(),
+                ));
+            }
 
-        *is_capturing = true;
-        drop(is_capturing);
+            *is_capturing = true;
+        } // Drop is_capturing guard here
 
         let is_capturing_clone = Arc::clone(&self.is_capturing);
         let audio_buffer_clone = Arc::clone(&self.audio_buffer);
+
+        // Store format info to be updated after detection
+        let format_info = Arc::new(Mutex::new(AudioFormat::default()));
+        let format_info_clone = Arc::clone(&format_info);
 
         // Spawn background task for audio capture
         let handle = tokio::task::spawn_blocking(move || {
@@ -282,7 +303,8 @@ impl AudioCapturePort for WasapiAudioCapture {
                 }
             };
 
-            // Initialize the audio client
+            // Initialize the audio client and get the actual device format
+            // This is where the format is detected from the WASAPI device
             let (format, sample_rate, bits_per_sample) = match Self::initialize_audio_client(&audio_client) {
                 Ok(f) => f,
                 Err(e) => {
@@ -291,6 +313,15 @@ impl AudioCapturePort for WasapiAudioCapture {
                     unsafe { CoUninitialize(); }
                     return;
                 }
+            };
+
+            // IMPORTANT: Update format with actual detected values from the device
+            // This replaces the default placeholder values with the real audio format
+            let channels = format.nChannels;
+            *format_info_clone.lock().unwrap() = AudioFormat {
+                sample_rate,        // e.g., 48000 Hz (detected from device)
+                channels,           // e.g., 2 (stereo, detected from device)
+                bits_per_sample,    // e.g., 32 bits (float, detected from device)
             };
 
             // Get the capture client
@@ -307,7 +338,7 @@ impl AudioCapturePort for WasapiAudioCapture {
             };
 
             log::info!("WASAPI audio capture initialized successfully");
-            log::info!("Format: {} Hz, {} bits", sample_rate, bits_per_sample);
+            log::info!("Format: {} Hz, {} channels, {} bits", sample_rate, channels, bits_per_sample);
 
             // Run the capture loop
             Self::capture_loop(
@@ -324,7 +355,17 @@ impl AudioCapturePort for WasapiAudioCapture {
         });
 
         self.capture_handle = Some(handle);
-        log::info!("Audio capture started");
+
+        // Wait for format detection to complete
+        // The background thread detects the system's audio format and stores it in format_info
+        // Typical Windows audio: 48000 Hz, stereo, 32-bit float
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // Update our format from the auto-detected format
+        self.format = format_info.lock().unwrap().clone();
+
+        log::info!("Audio capture started with format: {} Hz, {} channels, {} bits",
+            self.format.sample_rate, self.format.channels, self.format.bits_per_sample);
         Ok(())
     }
 
@@ -384,9 +425,12 @@ mod tests {
     fn test_default_format() {
         let capture = WasapiAudioCapture::new();
         let format = capture.get_format();
-        assert_eq!(format.sample_rate, 16000);
-        assert_eq!(format.channels, 1);
-        assert_eq!(format.bits_per_sample, 16);
+        // Before capture starts, format is the default placeholder
+        // Actual format is detected during start_capture() and varies by system
+        // Typical Windows audio: 48000 Hz, 2 channels, 32 bits (float)
+        assert_eq!(format.sample_rate, 16000); // Placeholder before capture
+        assert_eq!(format.channels, 1);         // Placeholder before capture
+        assert_eq!(format.bits_per_sample, 16); // Placeholder before capture
     }
 
     #[tokio::test]

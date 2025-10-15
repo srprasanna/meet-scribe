@@ -6,6 +6,12 @@ use crate::error::Result;
 use async_trait::async_trait;
 
 /// Represents audio format specifications
+///
+/// The actual format varies by platform and system configuration:
+/// - **Windows WASAPI**: Auto-detected from system (typically 48000 Hz, stereo, 32-bit float)
+/// - **Linux PulseAudio**: Fixed at 44100 Hz, stereo, 16-bit signed
+///
+/// The default values are placeholder values used before audio capture starts.
 #[derive(Debug, Clone)]
 pub struct AudioFormat {
     pub sample_rate: u32,
@@ -16,9 +22,9 @@ pub struct AudioFormat {
 impl Default for AudioFormat {
     fn default() -> Self {
         Self {
-            sample_rate: 16000, // 16kHz is standard for speech recognition
-            channels: 1,        // Mono
-            bits_per_sample: 16,
+            sample_rate: 16000, // Placeholder - actual format set during capture
+            channels: 1,        // Placeholder - actual format set during capture
+            bits_per_sample: 16, // Placeholder - actual format set during capture
         }
     }
 }

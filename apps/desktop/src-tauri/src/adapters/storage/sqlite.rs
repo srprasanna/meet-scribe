@@ -33,9 +33,10 @@ impl SqliteStorage {
     pub fn run_migrations(&self) -> Result<()> {
         use rusqlite_migration::{Migrations, M};
 
-        let migrations = Migrations::new(vec![M::up(include_str!(
-            "../../../migrations/001_initial.sql"
-        ))]);
+        let migrations = Migrations::new(vec![
+            M::up(include_str!("../../../migrations/001_initial.sql")),
+            M::up(include_str!("../../../migrations/002_add_audio_file_path.sql")),
+        ]);
 
         let mut conn = self.conn.lock().unwrap();
         migrations.to_latest(&mut conn).map_err(|e| {
@@ -51,14 +52,15 @@ impl StoragePort for SqliteStorage {
     async fn create_meeting(&self, meeting: &Meeting) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO meetings (platform, title, start_time, end_time, participant_count, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO meetings (platform, title, start_time, end_time, participant_count, audio_file_path, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 meeting.platform.to_string(),
                 meeting.title,
                 meeting.start_time,
                 meeting.end_time,
                 meeting.participant_count,
+                meeting.audio_file_path,
                 meeting.created_at,
             ],
         )?;
@@ -68,7 +70,7 @@ impl StoragePort for SqliteStorage {
     async fn get_meeting(&self, id: i64) -> Result<Option<Meeting>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, platform, title, start_time, end_time, participant_count, created_at
+            "SELECT id, platform, title, start_time, end_time, participant_count, audio_file_path, created_at
              FROM meetings WHERE id = ?1",
         )?;
 
@@ -90,7 +92,8 @@ impl StoragePort for SqliteStorage {
                 start_time: row.get(3)?,
                 end_time: row.get(4)?,
                 participant_count: row.get(5)?,
-                created_at: row.get(6)?,
+                audio_file_path: row.get(6)?,
+                created_at: row.get(7)?,
             }))
         } else {
             Ok(None)
@@ -100,7 +103,7 @@ impl StoragePort for SqliteStorage {
     async fn list_meetings(&self, limit: Option<i32>, offset: Option<i32>) -> Result<Vec<Meeting>> {
         let conn = self.conn.lock().unwrap();
         let query = format!(
-            "SELECT id, platform, title, start_time, end_time, participant_count, created_at
+            "SELECT id, platform, title, start_time, end_time, participant_count, audio_file_path, created_at
              FROM meetings ORDER BY start_time DESC LIMIT ?1 OFFSET ?2"
         );
 
@@ -121,7 +124,8 @@ impl StoragePort for SqliteStorage {
                 start_time: row.get(3)?,
                 end_time: row.get(4)?,
                 participant_count: row.get(5)?,
-                created_at: row.get(6)?,
+                audio_file_path: row.get(6)?,
+                created_at: row.get(7)?,
             })
         })?;
 
@@ -137,13 +141,14 @@ impl StoragePort for SqliteStorage {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "UPDATE meetings SET platform = ?1, title = ?2, start_time = ?3, end_time = ?4,
-             participant_count = ?5 WHERE id = ?6",
+             participant_count = ?5, audio_file_path = ?6 WHERE id = ?7",
             params![
                 meeting.platform.to_string(),
                 meeting.title,
                 meeting.start_time,
                 meeting.end_time,
                 meeting.participant_count,
+                meeting.audio_file_path,
                 meeting.id,
             ],
         )?;

@@ -6,6 +6,7 @@ use crate::ports::storage::StoragePort;
 use crate::AppState;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tauri::Manager;
 
 /// Request to start a new meeting
 #[derive(Debug, Deserialize)]
@@ -85,11 +86,17 @@ pub async fn start_meeting(
 
 /// Stop the current meeting and audio capture
 #[tauri::command]
-pub async fn stop_meeting(state: tauri::State<'_, AppState>, meeting_id: i64) -> Result<(), String> {
+pub async fn stop_meeting(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    meeting_id: i64,
+) -> Result<(), String> {
     log::info!("Stopping meeting ID: {}", meeting_id);
 
     // Stop audio capture and save audio file in background
     let audio_capture_arc = Arc::clone(&state.audio_capture);
+    let storage_arc = Arc::clone(&state.storage);
+
     tokio::spawn(async move {
         let mut audio_capture = audio_capture_arc.lock().await;
         if let Err(e) = audio_capture.stop_capture().await {
@@ -100,13 +107,45 @@ pub async fn stop_meeting(state: tauri::State<'_, AppState>, meeting_id: i64) ->
         // Get audio buffer and save to WAV file
         match audio_capture.get_audio_buffer().await {
             Ok(Some(buffer)) => {
-                // For now, we'll save to a temporary location
-                // TODO: Store audio file path in database and use proper app data directory
-                let audio_file = std::env::temp_dir().join(format!("meeting_{}.wav", meeting_id));
+                // Get app data directory for secure storage
+                let app_data_dir = match app.path().app_data_dir() {
+                    Ok(dir) => dir,
+                    Err(e) => {
+                        log::error!("Failed to get app data directory: {}", e);
+                        return;
+                    }
+                };
+
+                // Create audio recordings subdirectory with restricted permissions
+                let audio_dir = app_data_dir.join("recordings");
+                if let Err(e) = std::fs::create_dir_all(&audio_dir) {
+                    log::error!("Failed to create recordings directory: {}", e);
+                    return;
+                }
+
+                // Save audio file with meeting ID for uniqueness
+                let audio_file = audio_dir.join(format!("meeting_{}.wav", meeting_id));
 
                 match crate::utils::audio_file::save_wav_file(&buffer, &audio_file) {
                     Ok(samples_written) => {
-                        log::info!("Saved {} samples to {}", samples_written, audio_file.display());
+                        log::info!("Saved {} samples to secure location: {}", samples_written, audio_file.display());
+
+                        // Store audio file path in database
+                        let file_path_str = audio_file.to_string_lossy().to_string();
+                        match storage_arc.get_meeting(meeting_id).await {
+                            Ok(Some(mut meeting)) => {
+                                meeting.audio_file_path = Some(file_path_str);
+                                if let Err(e) = storage_arc.update_meeting(&meeting).await {
+                                    log::error!("Failed to update meeting with audio file path: {}", e);
+                                }
+                            }
+                            Ok(None) => {
+                                log::error!("Meeting {} not found", meeting_id);
+                            }
+                            Err(e) => {
+                                log::error!("Failed to get meeting: {}", e);
+                            }
+                        }
                     }
                     Err(e) => {
                         log::error!("Failed to save audio file: {}", e);

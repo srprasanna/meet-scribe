@@ -11,20 +11,29 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// Linux PulseAudio capture implementation
+///
+/// Captures system audio output using PulseAudio monitor sources.
+/// Uses @DEFAULT_MONITOR@ to capture what's playing through the speakers.
+///
+/// Audio format: 44100 Hz, 2 channels (stereo), 16-bit signed little-endian
 pub struct PulseAudioCapture {
     is_capturing: Arc<Mutex<bool>>,
     audio_buffer: Arc<Mutex<Vec<f32>>>,
+    /// Audio format - placeholder until capture starts, then set to 44.1kHz stereo 16-bit
     format: AudioFormat,
     capture_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl PulseAudioCapture {
     /// Creates a new PulseAudio capture instance
+    ///
+    /// The format field is initialized to a default placeholder.
+    /// Actual format (44.1kHz stereo 16-bit) is set when `start_capture()` is called.
     pub fn new() -> Self {
         Self {
             is_capturing: Arc::new(Mutex::new(false)),
             audio_buffer: Arc::new(Mutex::new(Vec::new())),
-            format: AudioFormat::default(),
+            format: AudioFormat::default(), // Placeholder, updated during start_capture()
             capture_handle: None,
         }
     }
@@ -49,19 +58,28 @@ impl AudioCapturePort for PulseAudioCapture {
         Ok(vec!["Default Monitor Source".to_string()])
     }
 
-    async fn start_capture(&mut self, _device_name: Option<String>) -> Result<()> {
-        let mut is_capturing = self.is_capturing.lock().unwrap();
-        if *is_capturing {
-            return Err(AppError::AudioCapture(
-                "Capture already in progress".to_string(),
-            ));
-        }
+    async fn start_capture(&mut self, device_name: Option<String>) -> Result<()> {
+        {
+            let mut is_capturing = self.is_capturing.lock().unwrap();
+            if *is_capturing {
+                return Err(AppError::AudioCapture(
+                    "Capture already in progress".to_string(),
+                ));
+            }
 
-        *is_capturing = true;
-        drop(is_capturing);
+            *is_capturing = true;
+        } // Drop is_capturing guard here
 
         let is_capturing_clone = Arc::clone(&self.is_capturing);
         let audio_buffer_clone = Arc::clone(&self.audio_buffer);
+
+        // Determine which device to use for capture
+        // Default to system monitor source if not specified
+        let device = device_name.unwrap_or_else(|| "@DEFAULT_MONITOR@".to_string());
+
+        // Store format info to be updated after detection
+        let format_info = Arc::new(Mutex::new(AudioFormat::default()));
+        let format_info_clone = Arc::clone(&format_info);
 
         // Spawn background task for audio capture
         let handle = tokio::task::spawn_blocking(move || {
@@ -72,13 +90,20 @@ impl AudioCapturePort for PulseAudioCapture {
                 rate: 44100,                 // 44.1 kHz
             };
 
+            // Store the format
+            *format_info_clone.lock().unwrap() = AudioFormat {
+                sample_rate: spec.rate,
+                channels: spec.channels,
+                bits_per_sample: 16, // S16LE is 16-bit
+            };
+
             // Create a simple recording connection
-            // Using None for device name uses the default monitor source
+            // Use monitor source to capture system audio output
             let simple = match Simple::new(
                 None,                          // Use default server
                 "Meet-Scribe",                // Application name
                 Direction::Record,            // Recording
-                None,                         // Use default monitor device
+                Some(&device),                // Monitor source for system audio
                 "Audio Capture",              // Stream description
                 &spec,                        // Sample spec
                 None,                         // Use default channel map
@@ -93,6 +118,7 @@ impl AudioCapturePort for PulseAudioCapture {
             };
 
             log::info!("PulseAudio capture initialized successfully");
+            log::info!("Device: {}", device);
             log::info!("Format: {} Hz, {} channels, 16-bit", spec.rate, spec.channels);
 
             // Buffer for reading samples (1024 frames at a time)
@@ -137,7 +163,16 @@ impl AudioCapturePort for PulseAudioCapture {
         });
 
         self.capture_handle = Some(handle);
-        log::info!("Audio capture started");
+
+        // Wait for format initialization to complete
+        // Format is set to 44100 Hz, stereo, 16-bit in the background thread
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // Update our format from the initialized format
+        self.format = format_info.lock().unwrap().clone();
+
+        log::info!("Audio capture started with format: {} Hz, {} channels, {} bits",
+            self.format.sample_rate, self.format.channels, self.format.bits_per_sample);
         Ok(())
     }
 
@@ -197,9 +232,11 @@ mod tests {
     fn test_default_format() {
         let capture = PulseAudioCapture::new();
         let format = capture.get_format();
-        assert_eq!(format.sample_rate, 16000);
-        assert_eq!(format.channels, 1);
-        assert_eq!(format.bits_per_sample, 16);
+        // Before capture starts, format is the default placeholder
+        // Actual format is set during start_capture() to: 44100 Hz, stereo, 16-bit
+        assert_eq!(format.sample_rate, 16000); // Placeholder before capture
+        assert_eq!(format.channels, 1);         // Placeholder before capture
+        assert_eq!(format.bits_per_sample, 16); // Placeholder before capture
     }
 
     #[tokio::test]
