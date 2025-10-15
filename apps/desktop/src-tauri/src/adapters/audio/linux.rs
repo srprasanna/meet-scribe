@@ -6,8 +6,8 @@
 use crate::error::{AppError, Result};
 use crate::ports::audio::{AudioBuffer, AudioCapturePort, AudioFormat};
 use async_trait::async_trait;
-use libpulse_binding::stream::Direction;
 use libpulse_binding::sample::{Format, Spec};
+use libpulse_binding::stream::Direction;
 use libpulse_simple_binding::Simple;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
