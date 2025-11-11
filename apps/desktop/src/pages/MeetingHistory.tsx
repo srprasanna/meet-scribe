@@ -32,11 +32,22 @@ function MeetingHistory() {
   const [transcriptionAvailable, setTranscriptionAvailable] = useState<boolean>(false);
   const [transcribingMeetingId, setTranscribingMeetingId] = useState<number | null>(null);
   const [transcripts, setTranscripts] = useState<{ [meetingId: number]: Transcript[] }>({});
+  const [loadingTranscripts, setLoadingTranscripts] = useState<{ [meetingId: number]: boolean }>({});
 
   useEffect(() => {
     loadMeetings();
     checkTranscriptionAvailability();
   }, []);
+
+  // Lazy load transcripts when a meeting is selected
+  useEffect(() => {
+    if (selectedMeeting?.id && selectedMeeting.end_time) {
+      // Only load if we don't already have transcripts for this meeting
+      if (!transcripts[selectedMeeting.id]) {
+        loadTranscriptsForMeeting(selectedMeeting.id);
+      }
+    }
+  }, [selectedMeeting]);
 
   // Poll for transcription status every 3 seconds
   useEffect(() => {
@@ -76,12 +87,8 @@ function MeetingHistory() {
       });
       setMeetings(history);
 
-      // Load transcripts for all meetings
-      for (const meeting of history) {
-        if (meeting.id && meeting.end_time) {
-          await loadTranscriptsForMeeting(meeting.id);
-        }
-      }
+      // Don't load transcripts upfront - use lazy loading instead
+      // Transcripts will be loaded only when a meeting is selected
     } catch (err) {
       setError(`Failed to load meetings: ${err}`);
       console.error(err);
@@ -91,11 +98,14 @@ function MeetingHistory() {
   };
 
   const loadTranscriptsForMeeting = async (meetingId: number) => {
+    setLoadingTranscripts((prev) => ({ ...prev, [meetingId]: true }));
     try {
       const transcriptList = await getTranscripts(meetingId);
       setTranscripts((prev) => ({ ...prev, [meetingId]: transcriptList }));
     } catch (err) {
       console.error(`Failed to load transcripts for meeting ${meetingId}:`, err);
+    } finally {
+      setLoadingTranscripts((prev) => ({ ...prev, [meetingId]: false }));
     }
   };
 
@@ -418,7 +428,22 @@ function MeetingHistory() {
           </div>
 
           {/* Transcripts Section */}
-          {transcripts[selectedMeeting.id]?.length > 0 ? (
+          {loadingTranscripts[selectedMeeting.id] ? (
+            <div
+              style={{
+                padding: "24px",
+                background: "#f0f7ff",
+                borderRadius: "6px",
+                textAlign: "center",
+                color: "#0078d4",
+                marginTop: "24px",
+                border: "1px solid #b3d9ff",
+              }}
+            >
+              <div style={{ fontSize: "32px", marginBottom: "8px" }}>📖</div>
+              <p style={{ margin: 0, fontWeight: "500" }}>Loading transcripts...</p>
+            </div>
+          ) : transcripts[selectedMeeting.id]?.length > 0 ? (
             <div>
               <h3 style={{ marginBottom: "12px", marginTop: "24px" }}>
                 Transcript ({transcripts[selectedMeeting.id].length} segments)

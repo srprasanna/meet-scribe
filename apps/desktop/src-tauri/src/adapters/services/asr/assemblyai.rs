@@ -252,15 +252,57 @@ impl TranscriptionServicePort for AssemblyAIService {
 
     async fn transcribe_bytes(
         &self,
-        _audio_data: &[u8],
-        _format: &str,
-        _config: &TranscriptionConfig,
+        audio_data: &[u8],
+        format: &str,
+        config: &TranscriptionConfig,
     ) -> Result<TranscriptionResult> {
-        // AssemblyAI requires file upload, so we'd need to write to temp file first
-        // For now, not implemented - use transcribe_file instead
-        Err(AppError::Transcription(
-            "transcribe_bytes not implemented for AssemblyAI - use transcribe_file".to_string(),
-        ))
+        log::info!(
+            "Transcribing audio bytes via AssemblyAI (format: {})",
+            format
+        );
+
+        // AssemblyAI requires file upload, so write bytes to a temporary file
+        let temp_dir = std::env::temp_dir();
+        let temp_file_path = temp_dir.join(format!(
+            "assemblyai_temp_{}.{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+            format
+        ));
+
+        // Write audio data to temporary file
+        tokio::fs::write(&temp_file_path, audio_data)
+            .await
+            .map_err(|e| {
+                AppError::Transcription(format!("Failed to write temporary file: {}", e))
+            })?;
+
+        log::debug!("Created temporary file: {}", temp_file_path.display());
+
+        // Transcribe using the temporary file
+        let result = self
+            .transcribe_file(
+                temp_file_path.to_str().ok_or_else(|| {
+                    AppError::Transcription("Invalid temporary file path".to_string())
+                })?,
+                config,
+            )
+            .await;
+
+        // Clean up temporary file
+        if let Err(e) = tokio::fs::remove_file(&temp_file_path).await {
+            log::warn!(
+                "Failed to remove temporary file {}: {}",
+                temp_file_path.display(),
+                e
+            );
+        } else {
+            log::debug!("Removed temporary file: {}", temp_file_path.display());
+        }
+
+        result
     }
 
     fn provider_name(&self) -> &str {
