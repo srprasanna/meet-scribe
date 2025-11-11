@@ -8,13 +8,15 @@ use crate::ports::audio::{AudioBuffer, AudioCapturePort, AudioFormat};
 use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use windows::core::{Interface, PWSTR};
+use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Media::Audio::{
-    eConsole, eRender, IAudioCaptureClient, IAudioClient, IMMDevice, IMMDeviceEnumerator,
-    MMDeviceEnumerator, AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_SHAREMODE_SHARED,
+    eCapture, eConsole, eRender, IAudioCaptureClient, IAudioClient, IMMDevice, IMMDeviceEnumerator,
+    IMMEndpoint, MMDeviceEnumerator, AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_SHAREMODE_SHARED,
     AUDCLNT_STREAMFLAGS_LOOPBACK, WAVEFORMATEX,
 };
 use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED,
+    CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ,
 };
 
 /// Windows WASAPI audio capture implementation
@@ -58,19 +60,186 @@ impl WasapiAudioCapture {
 
     /// Get the default audio render device (loopback capture)
     fn get_default_device() -> Result<IMMDevice> {
+        use windows::Win32::Media::Audio::eCommunications;
+
         unsafe {
             let enumerator: IMMDeviceEnumerator =
                 CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).map_err(|e| {
                     AppError::AudioCapture(format!("Failed to create device enumerator: {}", e))
                 })?;
 
+            // Try to get the default COMMUNICATION device first (used by meeting apps)
+            // If that fails, fall back to the default multimedia device
             let device = enumerator
-                .GetDefaultAudioEndpoint(eRender, eConsole)
+                .GetDefaultAudioEndpoint(eRender, eCommunications)
+                .or_else(|_| {
+                    log::info!("No communication device set, using default multimedia device");
+                    enumerator.GetDefaultAudioEndpoint(eRender, eConsole)
+                })
                 .map_err(|e| {
                     AppError::AudioCapture(format!("Failed to get default audio endpoint: {}", e))
                 })?;
 
             Ok(device)
+        }
+    }
+
+    /// Get audio device by index
+    ///
+    /// Searches through all active render devices and returns the one at the given index.
+    /// Index 0 is the default device, index 1+ are other devices in the system.
+    fn get_device_by_index(device_index: usize) -> Result<IMMDevice> {
+        use windows::Win32::Media::Audio::DEVICE_STATE_ACTIVE;
+
+        if device_index == 0 {
+            // Index 0 is always the default device
+            return Self::get_default_device();
+        }
+
+        unsafe {
+            let enumerator: IMMDeviceEnumerator =
+                CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).map_err(|e| {
+                    AppError::AudioCapture(format!("Failed to create device enumerator: {}", e))
+                })?;
+
+            let collection = enumerator
+                .EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE)
+                .map_err(|e| {
+                    AppError::AudioCapture(format!("Failed to enumerate audio endpoints: {}", e))
+                })?;
+
+            let count = collection.GetCount().map_err(|e| {
+                AppError::AudioCapture(format!("Failed to get device count: {}", e))
+            })?;
+
+            // device_index - 1 because index 0 is the default device
+            let actual_index = device_index.saturating_sub(1);
+
+            if actual_index >= count as usize {
+                log::warn!(
+                    "Device index {} out of range, using default device",
+                    device_index
+                );
+                return Self::get_default_device();
+            }
+
+            collection.Item(actual_index as u32).map_err(|e| {
+                AppError::AudioCapture(format!("Failed to get device {}: {}", actual_index, e))
+            })
+        }
+    }
+
+    /// Get friendly name for an audio device
+    ///
+    /// Retrieves the user-friendly device name using Windows Property Store
+    /// Falls back to parsing device ID if property access fails
+    fn get_device_friendly_name(device: &IMMDevice, device_index: u32) -> String {
+        unsafe {
+            // Try to open the property store and get the friendly name
+            // Wrap in a closure to catch any panics/errors
+            let friendly_name_result =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    if let Ok(property_store) = device.OpenPropertyStore(STGM_READ) {
+                        if let Ok(prop_variant) = property_store.GetValue(&PKEY_Device_FriendlyName)
+                        {
+                            // PROPVARIANT is a complex union structure
+                            // The layout in memory starts with: vt (u16), reserved fields, then the union
+                            // For VT_LPWSTR (31), the pwszVal is at offset 8 bytes
+                            #[repr(C)]
+                            struct PropVariantSimple {
+                                vt: u16,
+                                _reserved1: u16,
+                                _reserved2: u16,
+                                _reserved3: u16,
+                                pwszval: *mut u16,
+                            }
+
+                            let pv = &prop_variant as *const _ as *const PropVariantSimple;
+                            let vt = (*pv).vt;
+
+                            // VT_LPWSTR = 31
+                            if vt == 31 {
+                                let pwstr_ptr = (*pv).pwszval;
+                                if !pwstr_ptr.is_null() {
+                                    // Calculate string length
+                                    let mut len = 0;
+                                    while *pwstr_ptr.add(len) != 0 {
+                                        len += 1;
+                                        if len > 1024 {
+                                            break;
+                                        } // Safety limit
+                                    }
+
+                                    if len > 0 && len < 1024 {
+                                        let slice = std::slice::from_raw_parts(pwstr_ptr, len);
+                                        if let Ok(name) = String::from_utf16(slice) {
+                                            if !name.is_empty() {
+                                                log::info!(
+                                                    "Device {} friendly name: {}",
+                                                    device_index,
+                                                    name
+                                                );
+                                                return Some(name);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    None
+                }));
+
+            // If we got a friendly name from property store, use it
+            if let Ok(Some(name)) = friendly_name_result {
+                return name;
+            }
+
+            // Fallback: Try to get device ID and extract useful information
+            if let Ok(device_id) = device.GetId() {
+                if let Ok(id_str) = device_id.to_string() {
+                    log::info!("Device {} ID: {}", device_index, id_str);
+
+                    // Parse for common hardware vendors in the ID
+                    let id_lower = id_str.to_lowercase();
+
+                    // Check for specific hardware vendors
+                    if id_lower.contains("realtek") || id_lower.contains("rtk") {
+                        return "Realtek Audio".to_string();
+                    }
+                    if id_lower.contains("nvidia") {
+                        return "NVIDIA Audio".to_string();
+                    }
+                    if id_lower.contains("amd") || id_lower.contains("ati") {
+                        return "AMD Audio".to_string();
+                    }
+                    if id_lower.contains("hdmi") {
+                        return "HDMI Audio".to_string();
+                    }
+                    if id_lower.contains("usb") {
+                        return "USB Audio Device".to_string();
+                    }
+                    if id_lower.contains("bluetooth") || id_lower.contains("bt_") {
+                        return "Bluetooth Audio".to_string();
+                    }
+                }
+            }
+
+            // Final fallback to generic name with type and index
+            let endpoint_type = device
+                .cast::<IMMEndpoint>()
+                .ok()
+                .and_then(|endpoint| endpoint.GetDataFlow().ok())
+                .map(|flow| {
+                    if flow == eRender {
+                        "Speaker"
+                    } else {
+                        "Microphone"
+                    }
+                })
+                .unwrap_or("Audio Device");
+
+            format!("{} {}", endpoint_type, device_index + 1)
         }
     }
 
@@ -176,7 +345,7 @@ impl WasapiAudioCapture {
 
             // Store format values locally to avoid packed field issues
             let frame_size = format.nBlockAlign as usize;
-            let bits_per_sample = format.wBitsPerSample;
+            let _bits_per_sample = format.wBitsPerSample;
 
             // Capture loop
             while *is_capturing.lock().unwrap() {
@@ -256,12 +425,233 @@ impl Default for WasapiAudioCapture {
 #[async_trait]
 impl AudioCapturePort for WasapiAudioCapture {
     async fn list_devices(&self) -> Result<Vec<String>> {
-        // For Phase 2, we'll just return the default device
-        // TODO: Implement full device enumeration in future phases
-        Ok(vec!["Default Audio Output (Loopback)".to_string()])
+        use windows::Win32::Media::Audio::DEVICE_STATE_ACTIVE;
+
+        tokio::task::spawn_blocking(|| {
+            unsafe {
+                // Initialize COM for this thread
+                if let Err(e) = Self::init_com() {
+                    return Err(e);
+                }
+
+                let enumerator: IMMDeviceEnumerator =
+                    CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).map_err(|e| {
+                        CoUninitialize();
+                        AppError::AudioCapture(format!("Failed to create device enumerator: {}", e))
+                    })?;
+
+                let mut devices = Vec::new();
+
+                // Get default speaker device first
+                match Self::get_default_device() {
+                    Ok(device) => {
+                        let name = Self::get_device_friendly_name(&device, 0);
+                        devices.push(format!("0: {} (Default Speaker)", name));
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to get default device: {}", e);
+                        devices.push("0: Default Communication Device (Speaker)".to_string());
+                    }
+                }
+
+                // Enumerate all speaker (render) devices
+                let speaker_collection = enumerator
+                    .EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE)
+                    .map_err(|e| {
+                        CoUninitialize();
+                        AppError::AudioCapture(format!(
+                            "Failed to enumerate speaker endpoints: {}",
+                            e
+                        ))
+                    })?;
+
+                let speaker_count = speaker_collection.GetCount().map_err(|e| {
+                    CoUninitialize();
+                    AppError::AudioCapture(format!("Failed to get speaker device count: {}", e))
+                })?;
+
+                // Add all speaker devices with their friendly names
+                for i in 0..speaker_count {
+                    match speaker_collection.Item(i) {
+                        Ok(device) => {
+                            let name = Self::get_device_friendly_name(&device, i);
+                            devices.push(format!("{}: {} (Speaker)", i + 1, name));
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to get speaker device {}: {}", i, e);
+                        }
+                    }
+                }
+
+                // Enumerate all microphone (capture) devices
+                let mic_collection = enumerator
+                    .EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE)
+                    .map_err(|e| {
+                        CoUninitialize();
+                        AppError::AudioCapture(format!(
+                            "Failed to enumerate microphone endpoints: {}",
+                            e
+                        ))
+                    })?;
+
+                let mic_count = mic_collection.GetCount().map_err(|e| {
+                    CoUninitialize();
+                    AppError::AudioCapture(format!("Failed to get microphone device count: {}", e))
+                })?;
+
+                // Add all microphone devices with their friendly names
+                // Use offset starting after speaker devices
+                let mic_offset = speaker_count + 1;
+                for i in 0..mic_count {
+                    match mic_collection.Item(i) {
+                        Ok(device) => {
+                            let name = Self::get_device_friendly_name(&device, i);
+                            devices.push(format!("{}: {} (Microphone)", mic_offset + i, name));
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to get microphone device {}: {}", i, e);
+                        }
+                    }
+                }
+
+                CoUninitialize();
+
+                log::info!(
+                    "Found {} audio devices ({} speakers, {} microphones)",
+                    devices.len(),
+                    speaker_count + 1,
+                    mic_count
+                );
+                Ok(devices)
+            }
+        })
+        .await
+        .map_err(|e| AppError::AudioCapture(format!("Task join error: {}", e)))?
     }
 
-    async fn start_capture(&mut self, _device_name: Option<String>) -> Result<()> {
+    async fn list_speaker_devices(&self) -> Result<Vec<String>> {
+        use windows::Win32::Media::Audio::DEVICE_STATE_ACTIVE;
+
+        tokio::task::spawn_blocking(|| {
+            unsafe {
+                if let Err(e) = Self::init_com() {
+                    return Err(e);
+                }
+
+                let enumerator: IMMDeviceEnumerator =
+                    CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).map_err(|e| {
+                        CoUninitialize();
+                        AppError::AudioCapture(format!("Failed to create device enumerator: {}", e))
+                    })?;
+
+                let mut devices = Vec::new();
+
+                // Get default speaker device first
+                match Self::get_default_device() {
+                    Ok(device) => {
+                        let name = Self::get_device_friendly_name(&device, 0);
+                        devices.push(format!("0: {} (Default Speaker)", name));
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to get default device: {}", e);
+                        devices.push("0: Default Communication Device".to_string());
+                    }
+                }
+
+                // Enumerate all speaker (render) devices
+                let speaker_collection = enumerator
+                    .EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE)
+                    .map_err(|e| {
+                        CoUninitialize();
+                        AppError::AudioCapture(format!(
+                            "Failed to enumerate speaker endpoints: {}",
+                            e
+                        ))
+                    })?;
+
+                let speaker_count = speaker_collection.GetCount().map_err(|e| {
+                    CoUninitialize();
+                    AppError::AudioCapture(format!("Failed to get speaker device count: {}", e))
+                })?;
+
+                // Add all speaker devices with their friendly names
+                for i in 0..speaker_count {
+                    match speaker_collection.Item(i) {
+                        Ok(device) => {
+                            let name = Self::get_device_friendly_name(&device, i);
+                            devices.push(format!("{}: {}", i + 1, name));
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to get speaker device {}: {}", i, e);
+                        }
+                    }
+                }
+
+                CoUninitialize();
+                log::info!("Found {} speaker devices", devices.len());
+                Ok(devices)
+            }
+        })
+        .await
+        .map_err(|e| AppError::AudioCapture(format!("Task join error: {}", e)))?
+    }
+
+    async fn list_microphone_devices(&self) -> Result<Vec<String>> {
+        use windows::Win32::Media::Audio::DEVICE_STATE_ACTIVE;
+
+        tokio::task::spawn_blocking(|| {
+            unsafe {
+                if let Err(e) = Self::init_com() {
+                    return Err(e);
+                }
+
+                let enumerator: IMMDeviceEnumerator =
+                    CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).map_err(|e| {
+                        CoUninitialize();
+                        AppError::AudioCapture(format!("Failed to create device enumerator: {}", e))
+                    })?;
+
+                let mut devices = Vec::new();
+
+                // Enumerate all microphone (capture) devices
+                let mic_collection = enumerator
+                    .EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE)
+                    .map_err(|e| {
+                        CoUninitialize();
+                        AppError::AudioCapture(format!(
+                            "Failed to enumerate microphone endpoints: {}",
+                            e
+                        ))
+                    })?;
+
+                let mic_count = mic_collection.GetCount().map_err(|e| {
+                    CoUninitialize();
+                    AppError::AudioCapture(format!("Failed to get microphone device count: {}", e))
+                })?;
+
+                // Add all microphone devices with their friendly names
+                for i in 0..mic_count {
+                    match mic_collection.Item(i) {
+                        Ok(device) => {
+                            let name = Self::get_device_friendly_name(&device, i);
+                            devices.push(format!("{}: {}", i, name));
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to get microphone device {}: {}", i, e);
+                        }
+                    }
+                }
+
+                CoUninitialize();
+                log::info!("Found {} microphone devices", devices.len());
+                Ok(devices)
+            }
+        })
+        .await
+        .map_err(|e| AppError::AudioCapture(format!("Task join error: {}", e)))?
+    }
+
+    async fn start_capture(&mut self, device_name: Option<String>) -> Result<()> {
         {
             let mut is_capturing = self.is_capturing.lock().unwrap();
             if *is_capturing {
@@ -289,11 +679,21 @@ impl AudioCapturePort for WasapiAudioCapture {
                 return;
             }
 
-            // Get the default audio device
-            let device = match Self::get_default_device() {
+            // Get the audio device (specific device or default)
+            // Device name format: "0: Default Audio Output" or "1: Audio Device 1"
+            let device_index = device_name
+                .and_then(|name| {
+                    // Extract index from "N: Device Name" format
+                    name.split(':').next()?.trim().parse::<usize>().ok()
+                })
+                .unwrap_or(0); // Default to index 0 if parsing fails
+
+            log::info!("Using audio device index: {}", device_index);
+
+            let device = match Self::get_device_by_index(device_index) {
                 Ok(d) => d,
                 Err(e) => {
-                    log::error!("Failed to get default device: {}", e);
+                    log::error!("Failed to get device at index {}: {}", device_index, e);
                     *is_capturing_clone.lock().unwrap() = false;
                     unsafe {
                         CoUninitialize();

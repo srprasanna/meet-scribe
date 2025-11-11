@@ -37,7 +37,9 @@ pub struct AppState {
 /// Initialize the application
 ///
 /// Sets up database connection and runs migrations.
-fn initialize_app(app: &tauri::AppHandle) -> Result<(AppState, commands::transcription::TranscriptionState)> {
+fn initialize_app(
+    app: &tauri::AppHandle,
+) -> Result<(AppState, commands::transcription::TranscriptionState)> {
     // Get application data directory
     let app_dir = app
         .path()
@@ -120,6 +122,8 @@ fn main() {
             commands::meeting::get_meeting_status,
             commands::meeting::get_audio_capture_status,
             commands::meeting::list_audio_devices,
+            commands::meeting::list_speaker_devices,
+            commands::meeting::list_microphone_devices,
             commands::meeting::get_meeting_history,
             commands::meeting::get_meeting,
             commands::meeting::delete_meeting,

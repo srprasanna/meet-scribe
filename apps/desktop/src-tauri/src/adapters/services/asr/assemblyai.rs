@@ -72,10 +72,9 @@ impl AssemblyAIService {
             )));
         }
 
-        let upload_response: UploadResponse = response
-            .json()
-            .await
-            .map_err(|e| AppError::Transcription(format!("Failed to parse upload response: {}", e)))?;
+        let upload_response: UploadResponse = response.json().await.map_err(|e| {
+            AppError::Transcription(format!("Failed to parse upload response: {}", e))
+        })?;
 
         log::info!("File uploaded successfully: {}", upload_response.upload_url);
         Ok(upload_response.upload_url)
@@ -114,10 +113,9 @@ impl AssemblyAIService {
             )));
         }
 
-        let submit_response: TranscriptResponse = response
-            .json()
-            .await
-            .map_err(|e| AppError::Transcription(format!("Failed to parse submit response: {}", e)))?;
+        let submit_response: TranscriptResponse = response.json().await.map_err(|e| {
+            AppError::Transcription(format!("Failed to parse submit response: {}", e))
+        })?;
 
         log::info!("Transcription submitted with ID: {}", submit_response.id);
         Ok(submit_response.id)
@@ -133,7 +131,10 @@ impl AssemblyAIService {
 
             let response = self
                 .client
-                .get(format!("{}/transcript/{}", ASSEMBLYAI_API_BASE, transcript_id))
+                .get(format!(
+                    "{}/transcript/{}",
+                    ASSEMBLYAI_API_BASE, transcript_id
+                ))
                 .header("authorization", &self.api_key)
                 .send()
                 .await
@@ -141,13 +142,15 @@ impl AssemblyAIService {
 
             if !response.status().is_success() {
                 let error_text = response.text().await.unwrap_or_default();
-                return Err(AppError::Transcription(format!("Poll failed: {}", error_text)));
+                return Err(AppError::Transcription(format!(
+                    "Poll failed: {}",
+                    error_text
+                )));
             }
 
-            let transcript_response: TranscriptResponse = response
-                .json()
-                .await
-                .map_err(|e| AppError::Transcription(format!("Failed to parse poll response: {}", e)))?;
+            let transcript_response: TranscriptResponse = response.json().await.map_err(|e| {
+                AppError::Transcription(format!("Failed to parse poll response: {}", e))
+            })?;
 
             match transcript_response.status.as_str() {
                 "completed" => {
@@ -182,7 +185,10 @@ impl AssemblyAIService {
     }
 
     /// Parse AssemblyAI response into our TranscriptionResult format
-    fn parse_transcript_response(&self, response: TranscriptResponse) -> Result<TranscriptionResult> {
+    fn parse_transcript_response(
+        &self,
+        response: TranscriptResponse,
+    ) -> Result<TranscriptionResult> {
         let text = response.text.unwrap_or_default();
         let confidence = response.confidence;
 

@@ -55,7 +55,14 @@ impl DeepgramService {
         let mut url = format!("{}/listen", DEEPGRAM_API_BASE);
         let mut params = vec![
             ("punctuate", "true"),
-            ("diarize", if config.enable_diarization { "true" } else { "false" }),
+            (
+                "diarize",
+                if config.enable_diarization {
+                    "true"
+                } else {
+                    "false"
+                },
+            ),
             ("utterances", "true"),
         ];
 
@@ -91,26 +98,22 @@ impl DeepgramService {
             )));
         }
 
-        let deepgram_response: DeepgramResponse = response
-            .json()
-            .await
-            .map_err(|e| AppError::Transcription(format!("Failed to parse Deepgram response: {}", e)))?;
+        let deepgram_response: DeepgramResponse = response.json().await.map_err(|e| {
+            AppError::Transcription(format!("Failed to parse Deepgram response: {}", e))
+        })?;
 
         self.parse_deepgram_response(deepgram_response)
     }
 
     /// Parse Deepgram response into our TranscriptionResult format
     fn parse_deepgram_response(&self, response: DeepgramResponse) -> Result<TranscriptionResult> {
-        let channel = response
-            .results
-            .channels
-            .get(0)
-            .ok_or_else(|| AppError::Transcription("No channels in Deepgram response".to_string()))?;
+        let channel = response.results.channels.get(0).ok_or_else(|| {
+            AppError::Transcription("No channels in Deepgram response".to_string())
+        })?;
 
-        let alternative = channel
-            .alternatives
-            .get(0)
-            .ok_or_else(|| AppError::Transcription("No alternatives in Deepgram response".to_string()))?;
+        let alternative = channel.alternatives.get(0).ok_or_else(|| {
+            AppError::Transcription("No alternatives in Deepgram response".to_string())
+        })?;
 
         let text = alternative.transcript.clone();
         let confidence = Some(alternative.confidence);
@@ -234,13 +237,24 @@ impl TranscriptionServicePort for DeepgramService {
         format: &str,
         config: &TranscriptionConfig,
     ) -> Result<TranscriptionResult> {
-        log::info!("Transcribing {} bytes with Deepgram (format: {})", audio_data.len(), format);
+        log::info!(
+            "Transcribing {} bytes with Deepgram (format: {})",
+            audio_data.len(),
+            format
+        );
 
         // Build query parameters
         let mut url = format!("{}/listen", DEEPGRAM_API_BASE);
         let mut params = vec![
             ("punctuate", "true"),
-            ("diarize", if config.enable_diarization { "true" } else { "false" }),
+            (
+                "diarize",
+                if config.enable_diarization {
+                    "true"
+                } else {
+                    "false"
+                },
+            ),
             ("utterances", "true"),
         ];
 
@@ -284,10 +298,9 @@ impl TranscriptionServicePort for DeepgramService {
             )));
         }
 
-        let deepgram_response: DeepgramResponse = response
-            .json()
-            .await
-            .map_err(|e| AppError::Transcription(format!("Failed to parse Deepgram response: {}", e)))?;
+        let deepgram_response: DeepgramResponse = response.json().await.map_err(|e| {
+            AppError::Transcription(format!("Failed to parse Deepgram response: {}", e))
+        })?;
 
         self.parse_deepgram_response(deepgram_response)
     }

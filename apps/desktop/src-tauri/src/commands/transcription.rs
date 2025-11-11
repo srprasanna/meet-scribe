@@ -1,7 +1,6 @@
 /// Transcription-related Tauri commands
 ///
 /// Provides IPC commands for triggering and managing transcription operations.
-
 use crate::adapters::services::asr::get_active_asr_service;
 use crate::adapters::storage::SqliteStorage;
 use crate::domain::models::Transcript;

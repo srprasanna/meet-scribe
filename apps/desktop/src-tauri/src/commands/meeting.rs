@@ -13,6 +13,8 @@ use tauri::Manager;
 pub struct StartMeetingRequest {
     pub platform: String, // "teams", "zoom", "meet"
     pub title: Option<String>,
+    pub speaker_device: Option<String>, // Speaker device (e.g., "0: Headset A18 (Speaker)")
+    pub microphone_device: Option<String>, // Microphone device (e.g., "1: Headset A18 (Microphone)")
 }
 
 /// Meeting status response
@@ -70,8 +72,10 @@ pub async fn start_meeting(
 
     // Start audio capture and wait for confirmation
     // This ensures we only store the meeting ID if audio capture actually started
+    // For now, we use the speaker device for capture (loopback mode on Windows)
+    // TODO: Use microphone_device for direct microphone input if needed
     let mut audio_capture = state.audio_capture.lock().await;
-    match audio_capture.start_capture(None).await {
+    match audio_capture.start_capture(request.speaker_device).await {
         Ok(_) => {
             log::info!(
                 "Audio capture started successfully for meeting {}",
@@ -294,12 +298,36 @@ pub async fn get_audio_capture_status(
     })
 }
 
-/// List available audio devices
+/// List available audio devices (deprecated - use list_speaker_devices and list_microphone_devices)
 #[tauri::command]
 pub async fn list_audio_devices(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
     let audio_capture = state.audio_capture.lock().await;
     audio_capture
         .list_devices()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// List available speaker devices
+#[tauri::command]
+pub async fn list_speaker_devices(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let audio_capture = state.audio_capture.lock().await;
+    audio_capture
+        .list_speaker_devices()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// List available microphone devices
+#[tauri::command]
+pub async fn list_microphone_devices(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let audio_capture = state.audio_capture.lock().await;
+    audio_capture
+        .list_microphone_devices()
         .await
         .map_err(|e| e.to_string())
 }
@@ -339,6 +367,32 @@ pub async fn delete_meeting(
     state: tauri::State<'_, AppState>,
     meeting_id: i64,
 ) -> Result<(), String> {
+    // First, get the meeting to retrieve the audio file path
+    let meeting = state
+        .storage
+        .get_meeting(meeting_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // If meeting exists and has an audio file, delete it
+    if let Some(meeting) = meeting {
+        if let Some(audio_file_path) = meeting.audio_file_path {
+            // Delete the audio file from disk
+            if let Err(e) = std::fs::remove_file(&audio_file_path) {
+                log::warn!(
+                    "Failed to delete audio file for meeting {}: {}. File path: {}",
+                    meeting_id,
+                    e,
+                    audio_file_path
+                );
+                // Continue with database deletion even if file deletion fails
+            } else {
+                log::info!("Deleted audio file: {}", audio_file_path);
+            }
+        }
+    }
+
+    // Delete the meeting record from the database
     state
         .storage
         .delete_meeting(meeting_id)
