@@ -8,7 +8,7 @@ use crate::ports::audio::{AudioBuffer, AudioCapturePort, AudioFormat};
 use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use windows::core::{Interface, PWSTR};
+use windows::core::Interface;
 use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Media::Audio::{
     eCapture, eConsole, eRender, IAudioCaptureClient, IAudioClient, IMMDevice, IMMDeviceEnumerator,
