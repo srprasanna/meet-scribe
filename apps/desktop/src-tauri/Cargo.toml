@@ -1,6 +1,6 @@
 [package]
 name = "meet-scribe"
-version = "0.1.0"
+version = "0.0.1"
 description = "Bot-free meeting assistant for Windows and Linux"
 authors = ["srprasanna"]
 edition = "2021"
