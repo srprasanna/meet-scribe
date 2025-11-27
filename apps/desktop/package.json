@@ -1,6 +1,6 @@
 {
   "name": "meet-scribe-desktop",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "Bot-free meeting assistant for Windows and Linux",
   "type": "module",
   "scripts": {
