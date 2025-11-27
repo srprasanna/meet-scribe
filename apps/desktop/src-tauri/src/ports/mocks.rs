@@ -129,6 +129,14 @@ impl StoragePort for MockStorage {
         Ok(ids)
     }
 
+    async fn delete_transcripts(&self, meeting_id: i64) -> Result<()> {
+        self.transcripts
+            .lock()
+            .unwrap()
+            .retain(|t| t.meeting_id != meeting_id);
+        Ok(())
+    }
+
     async fn create_insight(&self, insight: &Insight) -> Result<i64> {
         let id = self.next_id();
         let mut i = insight.clone();
@@ -146,6 +154,14 @@ impl StoragePort for MockStorage {
             .filter(|i| i.meeting_id == meeting_id)
             .cloned()
             .collect())
+    }
+
+    async fn delete_insights(&self, meeting_id: i64) -> Result<()> {
+        self.insights
+            .lock()
+            .unwrap()
+            .retain(|i| i.meeting_id != meeting_id);
+        Ok(())
     }
 
     async fn save_service_config(&self, config: &ServiceConfig) -> Result<i64> {
