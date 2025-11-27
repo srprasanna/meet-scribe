@@ -24,6 +24,7 @@ export interface Transcript {
   id?: number;
   meeting_id: number;
   participant_id?: number;
+  speaker_label?: string;
   timestamp_ms: number;
   text: string;
   confidence?: number;
@@ -51,4 +52,26 @@ export interface ServiceConfig {
   settings?: string;
   created_at: number;
   updated_at: number;
+}
+
+// Transcription types
+export interface TranscriptionConfig {
+  enable_diarization: boolean;
+  num_speakers?: number;
+  language?: string;
+  additional_settings?: Record<string, unknown>;
+}
+
+export interface TranscriptionSegment {
+  text: string;
+  start_ms: number;
+  end_ms: number;
+  speaker_label?: string;
+  confidence?: number;
+}
+
+export interface TranscriptionResult {
+  text: string;
+  segments: TranscriptionSegment[];
+  confidence?: number;
 }

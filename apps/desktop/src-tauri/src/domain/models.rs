@@ -86,7 +86,8 @@ pub struct Transcript {
     pub id: Option<i64>,
     pub meeting_id: i64,
     pub participant_id: Option<i64>,
-    pub timestamp_ms: i64, // Milliseconds into meeting
+    pub speaker_label: Option<String>, // "Speaker 1", "Speaker 2", etc. from diarization
+    pub timestamp_ms: i64,             // Milliseconds into meeting
     pub text: String,
     pub confidence: Option<f32>, // 0.0 to 1.0
     pub created_at: i64,
@@ -99,6 +100,27 @@ impl Transcript {
             id: None,
             meeting_id,
             participant_id: None,
+            speaker_label: None,
+            timestamp_ms,
+            text,
+            confidence,
+            created_at: chrono::Utc::now().timestamp(),
+        }
+    }
+
+    /// Creates a new transcript segment with speaker label
+    pub fn with_speaker(
+        meeting_id: i64,
+        timestamp_ms: i64,
+        text: String,
+        confidence: Option<f32>,
+        speaker_label: Option<String>,
+    ) -> Self {
+        Self {
+            id: None,
+            meeting_id,
+            participant_id: None,
+            speaker_label,
             timestamp_ms,
             text,
             confidence,
@@ -206,6 +228,47 @@ impl ServiceConfig {
     /// Sets the settings JSON (builder pattern)
     pub fn with_settings(mut self, settings: Option<String>) -> Self {
         self.settings = settings;
+        self
+    }
+}
+
+/// Model configuration override
+/// Allows users to customize model-specific settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelOverride {
+    pub id: Option<i64>,
+    pub provider: String,              // "openai", "anthropic", "google", "groq"
+    pub model_id: String,              // Model identifier (e.g., "gpt-5", "claude-4")
+    pub context_window: Option<usize>, // User-configured context window
+    pub notes: Option<String>,         // User notes about this model
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+impl ModelOverride {
+    /// Creates a new model override
+    pub fn new(provider: String, model_id: String) -> Self {
+        let now = chrono::Utc::now().timestamp();
+        Self {
+            id: None,
+            provider,
+            model_id,
+            context_window: None,
+            notes: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    /// Sets the context window (builder pattern)
+    pub fn with_context_window(mut self, context_window: usize) -> Self {
+        self.context_window = Some(context_window);
+        self
+    }
+
+    /// Sets notes (builder pattern)
+    pub fn with_notes(mut self, notes: String) -> Self {
+        self.notes = Some(notes);
         self
     }
 }

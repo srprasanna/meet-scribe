@@ -33,6 +33,9 @@ pub enum AppError {
     #[error("LLM service error: {0}")]
     Llm(String),
 
+    #[error("LLM service error: {0}")]
+    LlmService(String),
+
     #[error("Configuration error: {0}")]
     Config(String),
 

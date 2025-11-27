@@ -45,6 +45,11 @@ const PLATFORMS = [
 function ActiveMeeting() {
   const [selectedPlatform, setSelectedPlatform] = useState<string>("teams");
   const [meetingTitle, setMeetingTitle] = useState<string>("");
+  const [selectedSpeakerDevice, setSelectedSpeakerDevice] = useState<string>("0: Default Communication Device");
+  const [selectedMicrophoneDevice, setSelectedMicrophoneDevice] = useState<string>("");
+  const [speakerDevices, setSpeakerDevices] = useState<string[]>([]);
+  const [microphoneDevices, setMicrophoneDevices] = useState<string[]>([]);
+  const [loadingDevices, setLoadingDevices] = useState<boolean>(false);
   const [meetingStatus, setMeetingStatus] = useState<MeetingStatus>({
     meeting_id: null,
     is_recording: false,
@@ -66,6 +71,34 @@ function ActiveMeeting() {
   const [transcript, setTranscript] = useState<TranscriptSegment[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+
+  // Load audio devices on mount
+  useEffect(() => {
+    const loadAudioDevices = async () => {
+      setLoadingDevices(true);
+      try {
+        const speakers = await invoke<string[]>("list_speaker_devices");
+        const microphones = await invoke<string[]>("list_microphone_devices");
+
+        setSpeakerDevices(speakers);
+        setMicrophoneDevices(microphones);
+
+        if (speakers.length > 0) {
+          setSelectedSpeakerDevice(speakers[0]); // Default to first speaker device
+        }
+        if (microphones.length > 0) {
+          setSelectedMicrophoneDevice(microphones[0]); // Default to first microphone device
+        }
+      } catch (err) {
+        console.error("Failed to load audio devices:", err);
+        setError(`Failed to load audio devices: ${err}`);
+      } finally {
+        setLoadingDevices(false);
+      }
+    };
+
+    loadAudioDevices();
+  }, []);
 
   // Poll meeting status periodically
   useEffect(() => {
@@ -102,6 +135,8 @@ function ActiveMeeting() {
         request: {
           platform: selectedPlatform,
           title: meetingTitle || null,
+          speaker_device: selectedSpeakerDevice,
+          microphone_device: selectedMicrophoneDevice,
         },
       });
 
@@ -244,7 +279,7 @@ function ActiveMeeting() {
             </div>
 
             {/* Meeting Title */}
-            <div style={{ marginBottom: "20px" }}>
+            <div style={{ marginBottom: "16px" }}>
               <label
                 htmlFor="meetingTitle"
                 style={{
@@ -269,6 +304,94 @@ function ActiveMeeting() {
                   fontSize: "14px",
                 }}
               />
+            </div>
+
+            {/* Speaker Device Selection */}
+            <div style={{ marginBottom: "16px" }}>
+              <label
+                htmlFor="speakerDevice"
+                style={{
+                  display: "block",
+                  marginBottom: "8px",
+                  fontWeight: "500",
+                }}
+              >
+                Speaker Device
+              </label>
+              <select
+                id="speakerDevice"
+                value={selectedSpeakerDevice}
+                onChange={(e) => setSelectedSpeakerDevice(e.target.value)}
+                disabled={loadingDevices}
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  border: "1px solid #ddd",
+                  borderRadius: "6px",
+                  fontSize: "14px",
+                  cursor: loadingDevices ? "not-allowed" : "pointer",
+                  background: loadingDevices ? "#f5f5f5" : "white",
+                }}
+              >
+                {loadingDevices ? (
+                  <option>Loading devices...</option>
+                ) : speakerDevices.length === 0 ? (
+                  <option>No speaker devices found</option>
+                ) : (
+                  speakerDevices.map((device) => (
+                    <option key={device} value={device}>
+                      {device}
+                    </option>
+                  ))
+                )}
+              </select>
+              <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>
+                Select the speaker/headset that's playing the meeting audio
+              </div>
+            </div>
+
+            {/* Microphone Device Selection */}
+            <div style={{ marginBottom: "20px" }}>
+              <label
+                htmlFor="microphoneDevice"
+                style={{
+                  display: "block",
+                  marginBottom: "8px",
+                  fontWeight: "500",
+                }}
+              >
+                Microphone Device
+              </label>
+              <select
+                id="microphoneDevice"
+                value={selectedMicrophoneDevice}
+                onChange={(e) => setSelectedMicrophoneDevice(e.target.value)}
+                disabled={loadingDevices}
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  border: "1px solid #ddd",
+                  borderRadius: "6px",
+                  fontSize: "14px",
+                  cursor: loadingDevices ? "not-allowed" : "pointer",
+                  background: loadingDevices ? "#f5f5f5" : "white",
+                }}
+              >
+                {loadingDevices ? (
+                  <option>Loading devices...</option>
+                ) : microphoneDevices.length === 0 ? (
+                  <option>No microphone devices found</option>
+                ) : (
+                  microphoneDevices.map((device) => (
+                    <option key={device} value={device}>
+                      {device}
+                    </option>
+                  ))
+                )}
+              </select>
+              <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>
+                Select the microphone you're using for the meeting
+              </div>
             </div>
 
             {/* Start Button */}

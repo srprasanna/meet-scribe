@@ -55,23 +55,39 @@ impl Default for LlmConfig {
     }
 }
 
+/// Model information from provider
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelInfo {
+    pub id: String,
+    pub name: String,
+    pub provider: String,
+    pub context_window: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_fallback_context_window: Option<bool>, // True if context window is estimated
+}
+
 /// Port trait for LLM services
 #[async_trait]
 pub trait LlmServicePort: Send + Sync {
-    /// Generate insights from a meeting transcript
+    /// Generate insights from a meeting transcript with optional custom prompt
     async fn generate_insights(
         &self,
         request: &InsightRequest,
         config: &LlmConfig,
+        prompt_template: Option<&str>,
     ) -> Result<Vec<GeneratedInsight>>;
 
-    /// Generate a summary from a transcript
+    /// Generate a summary from a transcript with optional custom prompt
     async fn generate_summary(
         &self,
         transcript: &str,
         context: Option<&str>,
         config: &LlmConfig,
+        prompt_template: Option<&str>,
     ) -> Result<String>;
+
+    /// Fetch available models from provider API
+    async fn fetch_available_models(&self) -> Result<Vec<ModelInfo>>;
 
     /// Get the provider name
     fn provider_name(&self) -> &str;

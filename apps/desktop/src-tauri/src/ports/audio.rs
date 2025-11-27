@@ -39,8 +39,14 @@ pub struct AudioBuffer {
 /// Port trait for audio capture functionality
 #[async_trait]
 pub trait AudioCapturePort: Send + Sync {
-    /// Lists available audio devices for capture
+    /// Lists available audio devices for capture (deprecated - use list_speaker_devices and list_microphone_devices)
     async fn list_devices(&self) -> Result<Vec<String>>;
+
+    /// Lists available speaker devices
+    async fn list_speaker_devices(&self) -> Result<Vec<String>>;
+
+    /// Lists available microphone devices
+    async fn list_microphone_devices(&self) -> Result<Vec<String>>;
 
     /// Starts capturing audio from the specified device
     /// Returns immediately, audio is captured in background

@@ -37,7 +37,9 @@ pub struct AppState {
 /// Initialize the application
 ///
 /// Sets up database connection and runs migrations.
-fn initialize_app(app: &tauri::AppHandle) -> Result<AppState> {
+fn initialize_app(
+    app: &tauri::AppHandle,
+) -> Result<(AppState, commands::transcription::TranscriptionState)> {
     // Get application data directory
     let app_dir = app
         .path()
@@ -54,12 +56,23 @@ fn initialize_app(app: &tauri::AppHandle) -> Result<AppState> {
     // Run migrations
     storage.run_migrations()?;
 
-    Ok(AppState {
-        storage: Arc::new(storage),
-        keychain: Arc::new(KeychainManager::new()),
+    let storage_arc = Arc::new(storage);
+    let keychain_arc = Arc::new(KeychainManager::new());
+
+    let app_state = AppState {
+        storage: Arc::clone(&storage_arc),
+        keychain: Arc::clone(&keychain_arc),
         audio_capture: Arc::new(Mutex::new(AudioCapture::new())),
         current_meeting_id: Arc::new(Mutex::new(None)),
-    })
+    };
+
+    let transcription_state = commands::transcription::TranscriptionState {
+        storage: Arc::clone(&storage_arc),
+        keychain: Arc::clone(&keychain_arc),
+        current_transcription: Arc::new(Mutex::new(None)),
+    };
+
+    Ok((app_state, transcription_state))
 }
 
 /// Example Tauri command - gets application version
@@ -86,8 +99,9 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             // Initialize app state
-            let state = initialize_app(app.handle())?;
-            app.manage(state);
+            let (app_state, transcription_state) = initialize_app(app.handle())?;
+            app.manage(app_state);
+            app.manage(transcription_state);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -108,9 +122,28 @@ fn main() {
             commands::meeting::get_meeting_status,
             commands::meeting::get_audio_capture_status,
             commands::meeting::list_audio_devices,
+            commands::meeting::list_speaker_devices,
+            commands::meeting::list_microphone_devices,
             commands::meeting::get_meeting_history,
             commands::meeting::get_meeting,
             commands::meeting::delete_meeting,
+            // Transcription commands
+            commands::transcription::start_transcription,
+            commands::transcription::get_transcription_status,
+            commands::transcription::get_transcripts,
+            commands::transcription::is_transcription_available,
+            commands::transcription::delete_transcripts,
+            // LLM commands
+            commands::llm::fetch_llm_models,
+            commands::llm::save_llm_api_key,
+            commands::llm::check_llm_api_key,
+            commands::llm::delete_llm_api_key,
+            commands::llm::generate_insights,
+            commands::llm::get_default_prompts,
+            commands::llm::list_llm_providers,
+            commands::llm::generate_meeting_insights,
+            commands::llm::get_meeting_insights,
+            commands::llm::delete_meeting_insights,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

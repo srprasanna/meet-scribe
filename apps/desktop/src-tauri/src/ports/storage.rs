@@ -45,12 +45,18 @@ pub trait StoragePort: Send + Sync {
     /// Batch insert transcripts (more efficient for large meetings)
     async fn create_transcripts_batch(&self, transcripts: &[Transcript]) -> Result<Vec<i64>>;
 
+    /// Delete all transcripts for a meeting
+    async fn delete_transcripts(&self, meeting_id: i64) -> Result<()>;
+
     // Insight operations
     /// Create a new insight
     async fn create_insight(&self, insight: &Insight) -> Result<i64>;
 
     /// Get insights for a meeting
     async fn get_insights(&self, meeting_id: i64) -> Result<Vec<Insight>>;
+
+    /// Delete all insights for a meeting
+    async fn delete_insights(&self, meeting_id: i64) -> Result<()>;
 
     // Service config operations
     /// Save or update service configuration

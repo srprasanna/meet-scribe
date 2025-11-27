@@ -38,6 +38,15 @@ impl SqliteStorage {
             M::up(include_str!(
                 "../../../migrations/002_add_audio_file_path.sql"
             )),
+            M::up(include_str!(
+                "../../../migrations/003_add_prompt_templates.sql"
+            )),
+            M::up(include_str!(
+                "../../../migrations/004_add_model_overrides.sql"
+            )),
+            M::up(include_str!(
+                "../../../migrations/005_add_speaker_label_to_transcripts.sql"
+            )),
         ]);
 
         let mut conn = self.conn.lock().unwrap();
@@ -237,7 +246,7 @@ impl StoragePort for SqliteStorage {
     async fn get_transcripts(&self, meeting_id: i64) -> Result<Vec<Transcript>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, meeting_id, participant_id, timestamp_ms, text, confidence, created_at
+            "SELECT id, meeting_id, participant_id, speaker_label, timestamp_ms, text, confidence, created_at
              FROM transcripts WHERE meeting_id = ?1 ORDER BY timestamp_ms",
         )?;
 
@@ -246,10 +255,11 @@ impl StoragePort for SqliteStorage {
                 id: Some(row.get(0)?),
                 meeting_id: row.get(1)?,
                 participant_id: row.get(2)?,
-                timestamp_ms: row.get(3)?,
-                text: row.get(4)?,
-                confidence: row.get(5)?,
-                created_at: row.get(6)?,
+                speaker_label: row.get(3)?,
+                timestamp_ms: row.get(4)?,
+                text: row.get(5)?,
+                confidence: row.get(6)?,
+                created_at: row.get(7)?,
             })
         })?;
 
@@ -268,14 +278,15 @@ impl StoragePort for SqliteStorage {
         let tx = conn.unchecked_transaction()?;
         {
             let mut stmt = tx.prepare(
-                "INSERT INTO transcripts (meeting_id, participant_id, timestamp_ms, text, confidence, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO transcripts (meeting_id, participant_id, speaker_label, timestamp_ms, text, confidence, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             )?;
 
             for transcript in transcripts {
                 stmt.execute(params![
                     transcript.meeting_id,
                     transcript.participant_id,
+                    transcript.speaker_label,
                     transcript.timestamp_ms,
                     transcript.text,
                     transcript.confidence,
@@ -338,6 +349,24 @@ impl StoragePort for SqliteStorage {
         }
 
         Ok(insights)
+    }
+
+    async fn delete_transcripts(&self, meeting_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM transcripts WHERE meeting_id = ?1",
+            params![meeting_id],
+        )?;
+        Ok(())
+    }
+
+    async fn delete_insights(&self, meeting_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM insights WHERE meeting_id = ?1",
+            params![meeting_id],
+        )?;
+        Ok(())
     }
 
     async fn save_service_config(&self, config: &ServiceConfig) -> Result<i64> {
