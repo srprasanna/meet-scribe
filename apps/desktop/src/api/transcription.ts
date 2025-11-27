@@ -19,7 +19,7 @@ export async function startTranscription(
   console.log(">>> FRONTEND: Calling start_transcription for meeting", meetingId);
   console.log(">>> FRONTEND: Config:", config || { enable_diarization: true, language: "en" });
 
-  const result = await invoke("start_transcription", {
+  await invoke("start_transcription", {
     meetingId,
     config: config || {
       enable_diarization: true,
@@ -28,7 +28,6 @@ export async function startTranscription(
   });
 
   console.log(">>> FRONTEND: start_transcription returned successfully");
-  return result;
 }
 
 /**
