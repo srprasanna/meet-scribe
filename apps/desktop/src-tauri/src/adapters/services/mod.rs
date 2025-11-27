@@ -5,3 +5,4 @@
 //! - LLM (Large Language Model) services
 
 pub mod asr;
+pub mod llm;

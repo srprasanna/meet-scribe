@@ -24,6 +24,7 @@ export interface Transcript {
   id?: number;
   meeting_id: number;
   participant_id?: number;
+  speaker_label?: string;
   timestamp_ms: number;
   text: string;
   confidence?: number;

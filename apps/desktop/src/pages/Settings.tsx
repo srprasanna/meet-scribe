@@ -39,27 +39,33 @@ const ASR_PROVIDERS = {
   },
 };
 
-// LLM Provider configurations
+// LLM Provider configurations (models are fetched dynamically from API)
 const LLM_PROVIDERS = {
   openai: {
     name: "OpenAI",
     signupUrl: "https://platform.openai.com/",
-    models: [
-      { value: "gpt-4-turbo", label: "GPT-4 Turbo (Most capable)" },
-      { value: "gpt-4", label: "GPT-4 (High quality)" },
-      { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo (Fast, economical)" },
-    ],
   },
   anthropic: {
     name: "Anthropic (Claude)",
     signupUrl: "https://console.anthropic.com/",
-    models: [
-      { value: "claude-3-opus-20240229", label: "Claude 3 Opus (Most capable)" },
-      { value: "claude-3-sonnet-20240229", label: "Claude 3 Sonnet (Balanced)" },
-      { value: "claude-3-haiku-20240307", label: "Claude 3 Haiku (Fastest)" },
-    ],
+  },
+  google: {
+    name: "Google (Gemini)",
+    signupUrl: "https://makersuite.google.com/app/apikey",
+  },
+  groq: {
+    name: "Groq",
+    signupUrl: "https://console.groq.com/",
   },
 };
+
+interface ModelInfo {
+  id: string;
+  name: string;
+  provider: string;
+  context_window: number;
+  is_fallback_context_window?: boolean;
+}
 
 function Settings() {
   // ASR state
@@ -73,6 +79,8 @@ function Settings() {
   const [llmApiKeys, setLlmApiKeys] = useState<Record<string, string>>({});
   const [llmKeyStatuses, setLlmKeyStatuses] = useState<Record<string, ApiKeyStatus>>({});
   const [llmModels, setLlmModels] = useState<Record<string, string>>({});
+  const [llmAvailableModels, setLlmAvailableModels] = useState<Record<string, ModelInfo[]>>({});
+  const [llmModelsLoading, setLlmModelsLoading] = useState<Record<string, boolean>>({});
 
   // Loading and error states
   const [loading, setLoading] = useState<Record<string, boolean>>({});
@@ -98,6 +106,22 @@ function Settings() {
     } catch (err) {
       console.error("Error loading configs:", err);
       setError(`Failed to load configurations: ${err}`);
+    }
+  };
+
+  const fetchLlmModels = async (provider: string) => {
+    setLlmModelsLoading((prev) => ({ ...prev, [provider]: true }));
+    try {
+      const response = await invoke<{ models: ModelInfo[] }>("fetch_llm_models", {
+        request: { provider },
+      });
+      setLlmAvailableModels((prev) => ({ ...prev, [provider]: response.models }));
+      console.log(`Fetched ${response.models.length} models for ${provider}`);
+    } catch (err) {
+      console.error(`Failed to fetch models for ${provider}:`, err);
+      // Don't show error to user - just keep empty models list
+    } finally {
+      setLlmModelsLoading((prev) => ({ ...prev, [provider]: false }));
     }
   };
 
@@ -137,6 +161,10 @@ function Settings() {
         if (config) {
           setLlmConfigs((prev) => ({ ...prev, [provider]: config }));
           setLlmModels((prev) => ({ ...prev, [provider]: model }));
+        }
+        // Fetch available models if API key exists
+        if (keyStatus.has_key) {
+          fetchLlmModels(provider);
         }
       }
     } catch (err) {
@@ -249,6 +277,37 @@ function Settings() {
     }
   };
 
+  const handleDeactivateService = async (serviceType: string, provider: string) => {
+    setLoading((prev) => ({ ...prev, [`deactivate_${serviceType}_${provider}`]: true }));
+    setError(null);
+
+    try {
+      // Get current config
+      const configs = serviceType === "asr" ? asrConfigs : llmConfigs;
+      const existingConfig = configs[provider];
+
+      // Save with is_active = false
+      await invoke("save_service_config", {
+        request: {
+          service_type: serviceType,
+          provider,
+          is_active: false,
+          settings: existingConfig?.settings || null,
+        },
+      });
+
+      // Reload config
+      await loadConfig(serviceType, provider);
+
+      setSuccess(`${provider} deactivated`);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError(`Failed to deactivate service: ${err}`);
+    } finally {
+      setLoading((prev) => ({ ...prev, [`deactivate_${serviceType}_${provider}`]: false }));
+    }
+  };
+
   const handleDeleteApiKey = async (serviceType: string, provider: string) => {
     if (!confirm(`Are you sure you want to delete the API key for ${provider}?`)) {
       return;
@@ -278,7 +337,7 @@ function Settings() {
   const renderServiceCard = (
     serviceType: string,
     provider: string,
-    providerConfig: { name: string; signupUrl: string; models: Array<{ value: string; label: string }> }
+    providerConfig: { name: string; signupUrl: string; models?: Array<{ value: string; label: string }> }
   ) => {
     const configs = serviceType === "asr" ? asrConfigs : llmConfigs;
     const keyStatuses = serviceType === "asr" ? asrKeyStatuses : llmKeyStatuses;
@@ -398,7 +457,14 @@ function Settings() {
         {/* Model Selection */}
         {hasKey && (
           <div style={{ marginTop: "15px" }}>
-            <label style={{ display: "block", fontWeight: "bold", marginBottom: "5px" }}>Model</label>
+            <label style={{ display: "block", fontWeight: "bold", marginBottom: "5px" }}>
+              Model
+              {serviceType === "llm" && llmModelsLoading[provider] && (
+                <span style={{ fontWeight: "normal", marginLeft: "8px", color: "#666" }}>
+                  (Loading models...)
+                </span>
+              )}
+            </label>
             <select
               value={selectedModel}
               onChange={(e) => {
@@ -410,42 +476,85 @@ function Settings() {
                 }
                 handleSaveModel(serviceType, provider, model);
               }}
-              disabled={loading[`model_${serviceType}_${provider}`]}
+              disabled={loading[`model_${serviceType}_${provider}`] || (serviceType === "llm" && llmModelsLoading[provider])}
               style={{ width: "100%", padding: "8px", borderRadius: "4px", border: "1px solid #ddd" }}
             >
               <option value="">Select a model</option>
-              {providerConfig.models.map((model) => (
+              {serviceType === "asr" && providerConfig.models?.map((model) => (
                 <option key={model.value} value={model.value}>
                   {model.label}
                 </option>
               ))}
+              {serviceType === "llm" && llmAvailableModels[provider]?.slice().sort((a, b) => a.name.localeCompare(b.name)).map((model) => (
+                <option key={model.id} value={model.id} title={`Context: ${model.context_window.toLocaleString()} tokens`}>
+                  {model.name} ({model.context_window.toLocaleString()} tokens)
+                  {model.is_fallback_context_window && " ⚠️"}
+                </option>
+              ))}
             </select>
+            {serviceType === "llm" && llmAvailableModels[provider]?.length === 0 && !llmModelsLoading[provider] && (
+              <p style={{ marginTop: "5px", fontSize: "12px", color: "#999" }}>
+                No models available. Check your API key.
+              </p>
+            )}
+            {serviceType === "llm" && (
+              <button
+                onClick={() => fetchLlmModels(provider)}
+                disabled={llmModelsLoading[provider]}
+                style={{
+                  marginTop: "8px",
+                  padding: "4px 12px",
+                  background: "#f5f5f5",
+                  border: "1px solid #ddd",
+                  borderRadius: "4px",
+                  cursor: llmModelsLoading[provider] ? "not-allowed" : "pointer",
+                  fontSize: "12px",
+                }}
+              >
+                {llmModelsLoading[provider] ? "Refreshing..." : "Refresh Models"}
+              </button>
+            )}
           </div>
         )}
 
         {/* Activation Button */}
         {hasKey && (
-          <div style={{ marginTop: "15px" }}>
-            <button
-              onClick={() => handleActivateService(serviceType, provider)}
-              disabled={isActive || loading[`activate_${serviceType}_${provider}`]}
-              style={{
-                width: "100%",
-                padding: "10px",
-                background: isActive ? "#9e9e9e" : "#4caf50",
-                color: "white",
-                border: "none",
-                borderRadius: "4px",
-                cursor: isActive ? "not-allowed" : "pointer",
-                fontWeight: "bold",
-              }}
-            >
-              {loading[`activate_${serviceType}_${provider}`]
-                ? "Activating..."
-                : isActive
-                ? "Currently Active"
-                : "Activate This Service"}
-            </button>
+          <div style={{ marginTop: "15px", display: "flex", gap: "8px" }}>
+            {!isActive ? (
+              <button
+                onClick={() => handleActivateService(serviceType, provider)}
+                disabled={loading[`activate_${serviceType}_${provider}`]}
+                style={{
+                  flex: 1,
+                  padding: "10px",
+                  background: "#4caf50",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: loading[`activate_${serviceType}_${provider}`] ? "not-allowed" : "pointer",
+                  fontWeight: "bold",
+                }}
+              >
+                {loading[`activate_${serviceType}_${provider}`] ? "Activating..." : "Activate This Service"}
+              </button>
+            ) : (
+              <button
+                onClick={() => handleDeactivateService(serviceType, provider)}
+                disabled={loading[`deactivate_${serviceType}_${provider}`]}
+                style={{
+                  flex: 1,
+                  padding: "10px",
+                  background: "#ff9800",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: loading[`deactivate_${serviceType}_${provider}`] ? "not-allowed" : "pointer",
+                  fontWeight: "bold",
+                }}
+              >
+                {loading[`deactivate_${serviceType}_${provider}`] ? "Deactivating..." : "Deactivate"}
+              </button>
+            )}
           </div>
         )}
       </div>

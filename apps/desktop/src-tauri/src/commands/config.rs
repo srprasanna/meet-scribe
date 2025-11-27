@@ -241,25 +241,48 @@ pub async fn activate_service(
     service_type: String,
     provider: String,
 ) -> Result<(), String> {
-    // First, get the configuration
-    let _config = state
-        .storage
-        .get_service_config(&service_type, &provider)
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| {
-            format!(
-                "Service configuration not found for {}:{}",
-                service_type, provider
-            )
-        })?;
-
-    // Check if API key exists
+    // Check if API key exists first
     if !state.keychain.has_api_key(&service_type, &provider) {
         return Err(format!(
             "Cannot activate service without API key. Please add an API key for {}:{}",
             service_type, provider
         ));
+    }
+
+    // Get or create the configuration
+    let config = state
+        .storage
+        .get_service_config(&service_type, &provider)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // If config doesn't exist, create a default one
+    if config.is_none() {
+        log::info!(
+            "Creating default configuration for {}:{}",
+            service_type,
+            provider
+        );
+
+        let service_type_enum = match service_type.as_str() {
+            "asr" => ServiceType::Asr,
+            "llm" => ServiceType::Llm,
+            _ => {
+                return Err(format!(
+                    "Invalid service type: {}. Must be 'asr' or 'llm'",
+                    service_type
+                ))
+            }
+        };
+
+        let default_config =
+            ServiceConfig::new(service_type_enum, provider.clone()).with_active(false); // Will be activated below
+
+        state
+            .storage
+            .save_service_config(&default_config)
+            .await
+            .map_err(|e| e.to_string())?;
     }
 
     // Deactivate all services of this type

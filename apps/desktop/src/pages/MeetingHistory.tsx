@@ -5,8 +5,15 @@ import {
   getTranscriptionStatus,
   getTranscripts,
   isTranscriptionAvailable,
+  deleteTranscripts,
 } from "../api/transcription";
-import type { Transcript } from "../types";
+import {
+  generateMeetingInsights,
+  getMeetingInsights,
+  deleteMeetingInsights,
+  type StoredInsight,
+} from "../api/insights";
+import type { Transcript, InsightType, ServiceConfig } from "../types";
 
 interface Meeting {
   id: number;
@@ -24,6 +31,13 @@ const PLATFORMS = {
   meet: { label: "Google Meet", icon: "🟢" },
 };
 
+const INSIGHT_TYPES: { type: InsightType; label: string; icon: string }[] = [
+  { type: "summary", label: "Summary", icon: "📋" },
+  { type: "action_item", label: "Action Items", icon: "✅" },
+  { type: "key_point", label: "Key Points", icon: "💡" },
+  { type: "decision", label: "Decisions", icon: "🎯" },
+];
+
 function MeetingHistory() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -34,17 +48,29 @@ function MeetingHistory() {
   const [transcripts, setTranscripts] = useState<{ [meetingId: number]: Transcript[] }>({});
   const [loadingTranscripts, setLoadingTranscripts] = useState<{ [meetingId: number]: boolean }>({});
 
+  // Insights state
+  const [insights, setInsights] = useState<{ [meetingId: number]: StoredInsight[] }>({});
+  const [loadingInsights, setLoadingInsights] = useState<{ [meetingId: number]: boolean }>({});
+  const [generatingInsights, setGeneratingInsights] = useState<number | null>(null);
+  const [llmConfig, setLlmConfig] = useState<{ provider: string; model: string } | null>(null);
+  const [llmAvailable, setLlmAvailable] = useState<boolean>(false);
+
   useEffect(() => {
     loadMeetings();
     checkTranscriptionAvailability();
+    checkLlmAvailability();
   }, []);
 
-  // Lazy load transcripts when a meeting is selected
+  // Lazy load transcripts and insights when a meeting is selected
   useEffect(() => {
     if (selectedMeeting?.id && selectedMeeting.end_time) {
       // Only load if we don't already have transcripts for this meeting
       if (!transcripts[selectedMeeting.id]) {
         loadTranscriptsForMeeting(selectedMeeting.id);
+      }
+      // Load insights if not already loaded
+      if (!insights[selectedMeeting.id]) {
+        loadInsightsForMeeting(selectedMeeting.id);
       }
     }
   }, [selectedMeeting]);
@@ -74,6 +100,107 @@ function MeetingHistory() {
       setTranscriptionAvailable(available);
     } catch (err) {
       console.error("Failed to check transcription availability:", err);
+    }
+  };
+
+  const checkLlmAvailability = async () => {
+    try {
+      // Get active LLM service config
+      const activeConfig = await invoke<ServiceConfig | null>("get_active_service_config", {
+        serviceType: "llm",
+      });
+      if (activeConfig) {
+        const settings = activeConfig.settings ? JSON.parse(activeConfig.settings) : {};
+        setLlmConfig({
+          provider: activeConfig.provider,
+          model: settings.model || "",
+        });
+        setLlmAvailable(!!settings.model);
+      } else {
+        setLlmAvailable(false);
+      }
+    } catch (err) {
+      console.error("Failed to check LLM availability:", err);
+      setLlmAvailable(false);
+    }
+  };
+
+  const loadInsightsForMeeting = async (meetingId: number) => {
+    setLoadingInsights((prev) => ({ ...prev, [meetingId]: true }));
+    try {
+      const response = await getMeetingInsights(meetingId);
+      setInsights((prev) => ({ ...prev, [meetingId]: response.insights }));
+    } catch (err) {
+      console.error(`Failed to load insights for meeting ${meetingId}:`, err);
+    } finally {
+      setLoadingInsights((prev) => ({ ...prev, [meetingId]: false }));
+    }
+  };
+
+  const handleRegenerateTranscripts = async (meetingId: number) => {
+    if (!confirm("Are you sure you want to regenerate the transcript? This will delete the existing transcript.")) {
+      return;
+    }
+
+    try {
+      setError(null);
+      // Delete existing transcripts
+      await deleteTranscripts(meetingId);
+      // Clear from state
+      setTranscripts((prev) => ({ ...prev, [meetingId]: [] }));
+      // Also delete insights since they're based on the old transcript
+      await deleteMeetingInsights(meetingId);
+      setInsights((prev) => ({ ...prev, [meetingId]: [] }));
+      // Start new transcription
+      await startTranscription(meetingId);
+      setTranscribingMeetingId(meetingId);
+    } catch (err) {
+      setError(`Failed to regenerate transcript: ${err}`);
+      console.error(err);
+    }
+  };
+
+  const handleRegenerateInsights = async (meetingId: number) => {
+    if (!confirm("Are you sure you want to regenerate the insights? This will delete the existing insights.")) {
+      return;
+    }
+
+    try {
+      setError(null);
+      // Delete existing insights
+      await deleteMeetingInsights(meetingId);
+      setInsights((prev) => ({ ...prev, [meetingId]: [] }));
+      // Generate new insights
+      await handleGenerateInsights(meetingId);
+    } catch (err) {
+      setError(`Failed to regenerate insights: ${err}`);
+      console.error(err);
+    }
+  };
+
+  const handleGenerateInsights = async (meetingId: number) => {
+    if (!llmConfig || !llmConfig.model) {
+      setError("LLM service not configured. Please configure an LLM service in Settings and select a model.");
+      return;
+    }
+
+    try {
+      setError(null);
+      setGeneratingInsights(meetingId);
+
+      const response = await generateMeetingInsights({
+        meeting_id: meetingId,
+        provider: llmConfig.provider,
+        model: llmConfig.model,
+        insight_types: ["summary", "action_item", "key_point", "decision"],
+      });
+
+      setInsights((prev) => ({ ...prev, [meetingId]: response.insights }));
+    } catch (err) {
+      setError(`Failed to generate insights: ${err}`);
+      console.error(err);
+    } finally {
+      setGeneratingInsights(null);
     }
   };
 
@@ -445,9 +572,27 @@ function MeetingHistory() {
             </div>
           ) : transcripts[selectedMeeting.id]?.length > 0 ? (
             <div>
-              <h3 style={{ marginBottom: "12px", marginTop: "24px" }}>
-                Transcript ({transcripts[selectedMeeting.id].length} segments)
-              </h3>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "24px", marginBottom: "12px" }}>
+                <h3 style={{ margin: 0 }}>
+                  Transcript ({transcripts[selectedMeeting.id].length} segments)
+                </h3>
+                <button
+                  onClick={() => handleRegenerateTranscripts(selectedMeeting.id)}
+                  disabled={transcribingMeetingId === selectedMeeting.id}
+                  style={{
+                    padding: "6px 12px",
+                    background: "#6c757d",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: transcribingMeetingId === selectedMeeting.id ? "not-allowed" : "pointer",
+                    fontSize: "12px",
+                  }}
+                  title="Re-transcribe with different settings or ASR provider"
+                >
+                  🔄 Regenerate Transcript
+                </button>
+              </div>
               <div
                 style={{
                   maxHeight: "400px",
@@ -485,6 +630,20 @@ function MeetingHistory() {
                         >
                           {timeStr}
                         </span>
+                        {transcript.speaker_label && (
+                          <span
+                            style={{
+                              fontSize: "11px",
+                              color: "#0078d4",
+                              background: "#e6f3ff",
+                              padding: "2px 8px",
+                              borderRadius: "4px",
+                              fontWeight: "500",
+                            }}
+                          >
+                            🎙️ {transcript.speaker_label}
+                          </span>
+                        )}
                         {transcript.confidence && (
                           <span
                             style={{
@@ -554,6 +713,163 @@ function MeetingHistory() {
               }}
             >
               <p style={{ margin: 0 }}>Meeting is still in progress. Transcription will be available after the meeting ends.</p>
+            </div>
+          )}
+
+          {/* Insights Section - only show if transcripts exist */}
+          {transcripts[selectedMeeting.id]?.length > 0 && (
+            <div style={{ marginTop: "24px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                <h3 style={{ margin: 0 }}>
+                  AI Insights
+                  {insights[selectedMeeting.id]?.length > 0 && ` (${insights[selectedMeeting.id].length})`}
+                </h3>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  {insights[selectedMeeting.id]?.length > 0 && (
+                    <button
+                      onClick={() => handleRegenerateInsights(selectedMeeting.id)}
+                      disabled={generatingInsights === selectedMeeting.id}
+                      style={{
+                        padding: "6px 12px",
+                        background: "#6c757d",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "4px",
+                        cursor: generatingInsights === selectedMeeting.id ? "not-allowed" : "pointer",
+                        fontSize: "12px",
+                      }}
+                      title="Re-generate insights with different LLM or settings"
+                    >
+                      🔄 Regenerate
+                    </button>
+                  )}
+                  {!insights[selectedMeeting.id]?.length && (
+                    <button
+                      onClick={() => handleGenerateInsights(selectedMeeting.id)}
+                      disabled={!llmAvailable || generatingInsights === selectedMeeting.id}
+                      style={{
+                        padding: "8px 16px",
+                        background: generatingInsights === selectedMeeting.id
+                          ? "#ffc107"
+                          : llmAvailable
+                          ? "#6f42c1"
+                          : "#d3d3d3",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "6px",
+                        cursor: llmAvailable && generatingInsights !== selectedMeeting.id ? "pointer" : "not-allowed",
+                        fontSize: "13px",
+                        fontWeight: "500",
+                      }}
+                      title={
+                        !llmAvailable
+                          ? "Configure LLM service in Settings"
+                          : generatingInsights === selectedMeeting.id
+                          ? "Generating insights..."
+                          : "Generate AI insights from transcript"
+                      }
+                    >
+                      {generatingInsights === selectedMeeting.id ? "⏳ Generating..." : "🤖 Generate Insights"}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {loadingInsights[selectedMeeting.id] ? (
+                <div
+                  style={{
+                    padding: "24px",
+                    background: "#f0f7ff",
+                    borderRadius: "6px",
+                    textAlign: "center",
+                    color: "#0078d4",
+                  }}
+                >
+                  Loading insights...
+                </div>
+              ) : generatingInsights === selectedMeeting.id ? (
+                <div
+                  style={{
+                    padding: "24px",
+                    background: "#fff8e1",
+                    borderRadius: "6px",
+                    textAlign: "center",
+                    color: "#856404",
+                    border: "1px solid #ffc107",
+                  }}
+                >
+                  <div style={{ fontSize: "32px", marginBottom: "8px" }}>🤖</div>
+                  <p style={{ margin: 0, fontWeight: "500" }}>Generating AI insights...</p>
+                  <p style={{ margin: "8px 0 0 0", fontSize: "13px" }}>
+                    Analyzing transcript with {llmConfig?.provider} ({llmConfig?.model})
+                  </p>
+                </div>
+              ) : insights[selectedMeeting.id]?.length > 0 ? (
+                <div style={{ display: "grid", gap: "16px" }}>
+                  {INSIGHT_TYPES.map(({ type, label, icon }) => {
+                    const typeInsights = insights[selectedMeeting.id].filter((i) => i.insight_type === type);
+                    if (typeInsights.length === 0) return null;
+
+                    return (
+                      <div
+                        key={type}
+                        style={{
+                          border: "1px solid #e0e0e0",
+                          borderRadius: "8px",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            background: type === "summary" ? "#e8f5e9" :
+                                        type === "action_item" ? "#fff3e0" :
+                                        type === "key_point" ? "#e3f2fd" :
+                                        "#fce4ec",
+                            padding: "12px 16px",
+                            fontWeight: "600",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                          }}
+                        >
+                          <span>{icon}</span>
+                          <span>{label}</span>
+                        </div>
+                        <div style={{ padding: "16px" }}>
+                          {typeInsights.map((insight) => (
+                            <div
+                              key={insight.id}
+                              style={{
+                                fontSize: "14px",
+                                lineHeight: "1.6",
+                                whiteSpace: "pre-wrap",
+                              }}
+                            >
+                              {insight.content}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    padding: "16px",
+                    background: "#f9f9f9",
+                    borderRadius: "6px",
+                    textAlign: "center",
+                    color: "#666",
+                  }}
+                >
+                  <p style={{ margin: 0 }}>
+                    {llmAvailable
+                      ? "Click 'Generate Insights' to analyze this transcript with AI"
+                      : "Configure an LLM service (OpenAI, Anthropic, Google, or Groq) in Settings to enable AI insights"}
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>

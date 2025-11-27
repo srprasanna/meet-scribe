@@ -16,13 +16,19 @@ export async function startTranscription(
   meetingId: number,
   config?: TranscriptionConfig
 ): Promise<void> {
-  return invoke("start_transcription", {
+  console.log(">>> FRONTEND: Calling start_transcription for meeting", meetingId);
+  console.log(">>> FRONTEND: Config:", config || { enable_diarization: true, language: "en" });
+
+  const result = await invoke("start_transcription", {
     meetingId,
     config: config || {
       enable_diarization: true,
       language: "en",
     },
   });
+
+  console.log(">>> FRONTEND: start_transcription returned successfully");
+  return result;
 }
 
 /**
@@ -53,4 +59,16 @@ export async function getTranscripts(meetingId: number): Promise<Transcript[]> {
  */
 export async function isTranscriptionAvailable(): Promise<boolean> {
   return invoke("is_transcription_available");
+}
+
+/**
+ * Delete all transcripts for a meeting
+ *
+ * This allows regenerating transcripts by first deleting existing ones.
+ *
+ * @param meetingId - The ID of the meeting
+ * @returns Promise that resolves when transcripts are deleted
+ */
+export async function deleteTranscripts(meetingId: number): Promise<void> {
+  return invoke("delete_transcripts", { meetingId });
 }

@@ -51,9 +51,35 @@ impl DeepgramService {
             .await
             .map_err(|e| AppError::Transcription(format!("Failed to read audio file: {}", e)))?;
 
+        // Log WAV file details
+        if buffer.len() > 44 {
+            // WAV header is 44 bytes - check if this looks like a valid WAV
+            let is_wav = &buffer[0..4] == b"RIFF" && &buffer[8..12] == b"WAVE";
+            println!(
+                ">>> WAV file check: is_valid_wav={}, total_bytes={}",
+                is_wav,
+                buffer.len()
+            );
+
+            if is_wav {
+                // Parse basic WAV info
+                let audio_format = u16::from_le_bytes([buffer[20], buffer[21]]);
+                let num_channels = u16::from_le_bytes([buffer[22], buffer[23]]);
+                let sample_rate =
+                    u32::from_le_bytes([buffer[24], buffer[25], buffer[26], buffer[27]]);
+                let bits_per_sample = u16::from_le_bytes([buffer[34], buffer[35]]);
+
+                println!(">>> WAV format: audio_format={}, channels={}, sample_rate={}, bits_per_sample={}",
+                    audio_format, num_channels, sample_rate, bits_per_sample);
+            } else {
+                println!("!!! WARNING: File doesn't have valid WAV header!");
+            }
+        }
+
         // Build query parameters
         let mut url = format!("{}/listen", DEEPGRAM_API_BASE);
         let mut params = vec![
+            ("model", "nova-2-meeting"), // Use Nova-2-meeting optimized for meetings
             ("punctuate", "true"),
             (
                 "diarize",
@@ -78,6 +104,11 @@ impl DeepgramService {
 
         url = format!("{}?{}", url, query_string);
 
+        println!(">>> Sending request to Deepgram API: {}", url);
+        println!(">>> Audio file size: {} bytes", buffer.len());
+        log::info!("Sending request to Deepgram API: {}", url);
+        log::info!("Audio file size: {} bytes", buffer.len());
+
         // Send request
         let response = self
             .client
@@ -87,11 +118,19 @@ impl DeepgramService {
             .body(buffer)
             .send()
             .await
-            .map_err(|e| AppError::Transcription(format!("Deepgram request failed: {}", e)))?;
+            .map_err(|e| {
+                log::error!("Deepgram HTTP request failed: {}", e);
+                AppError::Transcription(format!("Deepgram request failed: {}", e))
+            })?;
 
-        if !response.status().is_success() {
-            let status = response.status();
+        let status = response.status();
+        println!(">>> Deepgram API response status: {}", status);
+        log::info!("Deepgram API response status: {}", status);
+
+        if !status.is_success() {
             let error_text = response.text().await.unwrap_or_default();
+            println!("!!! Deepgram API error ({}): {}", status, error_text);
+            log::error!("Deepgram API error response: {}", error_text);
             return Err(AppError::Transcription(format!(
                 "Deepgram API error ({}): {}",
                 status, error_text
@@ -99,10 +138,19 @@ impl DeepgramService {
         }
 
         let deepgram_response: DeepgramResponse = response.json().await.map_err(|e| {
+            println!("!!! Failed to parse Deepgram JSON response: {}", e);
+            log::error!("Failed to parse Deepgram JSON response: {}", e);
             AppError::Transcription(format!("Failed to parse Deepgram response: {}", e))
         })?;
 
-        self.parse_deepgram_response(deepgram_response)
+        println!(">>> Successfully parsed Deepgram JSON response");
+        println!(">>> Channels: {}", deepgram_response.results.channels.len());
+
+        let result = self.parse_deepgram_response(deepgram_response)?;
+        println!(">>> Parsed into {} segments", result.segments.len());
+        println!(">>> Transcript text length: {} chars", result.text.len());
+
+        Ok(result)
     }
 
     /// Parse Deepgram response into our TranscriptionResult format
@@ -118,8 +166,20 @@ impl DeepgramService {
         let text = alternative.transcript.clone();
         let confidence = Some(alternative.confidence);
 
+        println!(">>> Transcript text from Deepgram: {} chars", text.len());
+        println!(">>> Has utterances: {}", alternative.utterances.is_some());
+        println!(">>> Has words: {}", alternative.words.is_some());
+
+        if let Some(ref utterances) = alternative.utterances {
+            println!(">>> Utterances count: {}", utterances.len());
+        }
+        if let Some(ref words) = alternative.words {
+            println!(">>> Words count: {}", words.len());
+        }
+
         // Parse utterances with speaker labels
         let segments = if let Some(utterances) = &alternative.utterances {
+            println!(">>> Using utterances for segments");
             utterances
                 .iter()
                 .map(|utt| TranscriptionSegment {
@@ -131,6 +191,7 @@ impl DeepgramService {
                 })
                 .collect()
         } else if let Some(words) = &alternative.words {
+            println!(">>> Using words fallback for segments");
             // Fallback: group words by speaker if utterances not available
             let mut segments = Vec::new();
             let mut current_speaker = None;
@@ -193,15 +254,23 @@ impl DeepgramService {
 
             segments
         } else {
+            println!(">>> No utterances or words - using fallback single segment");
             // No diarization - single segment
-            vec![TranscriptionSegment {
-                text: text.clone(),
-                start_ms: 0,
-                end_ms: (response.metadata.duration * 1000.0) as i64,
-                speaker_label: None,
-                confidence,
-            }]
+            if text.is_empty() {
+                println!("!!! WARNING: Transcript text is empty!");
+                vec![]
+            } else {
+                vec![TranscriptionSegment {
+                    text: text.clone(),
+                    start_ms: 0,
+                    end_ms: (response.metadata.duration * 1000.0) as i64,
+                    speaker_label: None,
+                    confidence,
+                }]
+            }
         };
+
+        println!(">>> Final segments count: {}", segments.len());
 
         Ok(TranscriptionResult {
             text,
@@ -246,6 +315,7 @@ impl TranscriptionServicePort for DeepgramService {
         // Build query parameters
         let mut url = format!("{}/listen", DEEPGRAM_API_BASE);
         let mut params = vec![
+            ("model", "nova-2-meeting"), // Use Nova-2-meeting optimized for meetings
             ("punctuate", "true"),
             (
                 "diarize",

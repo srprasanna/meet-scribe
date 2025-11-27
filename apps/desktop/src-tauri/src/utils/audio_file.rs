@@ -9,6 +9,8 @@ use std::path::Path;
 
 /// Save an audio buffer to a WAV file
 ///
+/// Always saves as 16-bit PCM format for maximum compatibility with ASR services.
+///
 /// # Arguments
 /// * `buffer` - The audio buffer containing f32 samples
 /// * `path` - The file path where the WAV file will be saved
@@ -16,11 +18,12 @@ use std::path::Path;
 /// # Returns
 /// The number of samples written
 pub fn save_wav_file<P: AsRef<Path>>(buffer: &AudioBuffer, path: P) -> Result<usize> {
-    // Create WAV specification from audio format
+    // Create WAV specification - always use 16-bit PCM for compatibility
+    // This is the most widely supported format for speech-to-text services
     let spec = WavSpec {
         channels: buffer.format.channels,
         sample_rate: buffer.format.sample_rate as u32,
-        bits_per_sample: buffer.format.bits_per_sample,
+        bits_per_sample: 16, // Force 16-bit for compatibility (not buffer.format.bits_per_sample)
         sample_format: hound::SampleFormat::Int,
     };
 

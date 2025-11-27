@@ -132,6 +132,18 @@ fn main() {
             commands::transcription::get_transcription_status,
             commands::transcription::get_transcripts,
             commands::transcription::is_transcription_available,
+            commands::transcription::delete_transcripts,
+            // LLM commands
+            commands::llm::fetch_llm_models,
+            commands::llm::save_llm_api_key,
+            commands::llm::check_llm_api_key,
+            commands::llm::delete_llm_api_key,
+            commands::llm::generate_insights,
+            commands::llm::get_default_prompts,
+            commands::llm::list_llm_providers,
+            commands::llm::generate_meeting_insights,
+            commands::llm::get_meeting_insights,
+            commands::llm::delete_meeting_insights,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
