@@ -255,8 +255,15 @@ jobs:
 
       - name: List build artifacts
         run: |
-          cd apps/desktop/src-tauri/target/release/bundle
-          ls -lR
+          echo "Checking if bundle directory exists..."
+          if [ -d "apps/desktop/src-tauri/target/release/bundle" ]; then
+            echo "Bundle directory found, listing contents:"
+            cd apps/desktop/src-tauri/target/release/bundle
+            ls -lR
+          else
+            echo "Bundle directory not found! Listing target directory:"
+            ls -lR apps/desktop/src-tauri/target/ || echo "Target directory doesn't exist"
+          fi
 
       - name: Upload Linux DEB
         uses: actions/upload-release-asset@v1

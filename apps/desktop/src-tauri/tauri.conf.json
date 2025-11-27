@@ -10,7 +10,18 @@
     "frontendDist": "../dist"
   },
   "bundle": {
-    "active": false
+    "active": true,
+    "targets": ["deb", "appimage", "msi"],
+    "icon": [],
+    "publisher": "Meet Scribe",
+    "homepage": "https://github.com/srprasanna/meet-scribe",
+    "longDescription": "A bot-free desktop meeting assistant that captures and transcribes meetings from Teams, Zoom, and Google Meet.",
+    "shortDescription": "Bot-free meeting assistant with transcription",
+    "linux": {
+      "deb": {
+        "depends": []
+      }
+    }
   },
   "app": {
     "windows": [
