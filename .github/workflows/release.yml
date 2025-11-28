@@ -188,27 +188,27 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         with:
           upload_url: ${{ needs.prepare-release.outputs.upload_url }}
-          asset_path: apps/desktop/src-tauri/target/release/bundle/msi/Meet Scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi
+          asset_path: apps/desktop/src-tauri/target/release/bundle/msi/meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi
           asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi
           asset_content_type: application/x-msi
 
       - name: Upload Windows MSI Signature
-        if: hashFiles('apps/desktop/src-tauri/target/release/bundle/msi/Meet Scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi.sig') != ''
+        if: hashFiles('apps/desktop/src-tauri/target/release/bundle/msi/meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi.sig') != ''
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         with:
           upload_url: ${{ needs.prepare-release.outputs.upload_url }}
-          asset_path: apps/desktop/src-tauri/target/release/bundle/msi/Meet Scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi.sig
+          asset_path: apps/desktop/src-tauri/target/release/bundle/msi/meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi.sig
           asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi.sig
           asset_content_type: text/plain
 
       - name: Save Windows signature as artifact
-        if: hashFiles('apps/desktop/src-tauri/target/release/bundle/msi/Meet Scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi.sig') != ''
+        if: hashFiles('apps/desktop/src-tauri/target/release/bundle/msi/meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi.sig') != ''
         uses: actions/upload-artifact@v4
         with:
           name: windows-sig
-          path: apps/desktop/src-tauri/target/release/bundle/msi/Meet Scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi.sig
+          path: apps/desktop/src-tauri/target/release/bundle/msi/meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi.sig
           retention-days: 1
 
       - name: Upload Windows MSI (alternative path)
@@ -297,7 +297,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         with:
           upload_url: ${{ needs.prepare-release.outputs.upload_url }}
-          asset_path: apps/desktop/src-tauri/target/release/bundle/deb/Meet Scribe_${{ needs.prepare-release.outputs.version }}_amd64.deb
+          asset_path: apps/desktop/src-tauri/target/release/bundle/deb/meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.deb
           asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.deb
           asset_content_type: application/vnd.debian.binary-package
 
@@ -307,27 +307,27 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         with:
           upload_url: ${{ needs.prepare-release.outputs.upload_url }}
-          asset_path: apps/desktop/src-tauri/target/release/bundle/appimage/Meet Scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage
+          asset_path: apps/desktop/src-tauri/target/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage
           asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage
           asset_content_type: application/octet-stream
 
       - name: Upload Linux AppImage Signature
-        if: hashFiles('apps/desktop/src-tauri/target/release/bundle/appimage/Meet Scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage.sig') != ''
+        if: hashFiles('apps/desktop/src-tauri/target/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage.sig') != ''
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         with:
           upload_url: ${{ needs.prepare-release.outputs.upload_url }}
-          asset_path: apps/desktop/src-tauri/target/release/bundle/appimage/Meet Scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage.sig
+          asset_path: apps/desktop/src-tauri/target/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage.sig
           asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage.sig
           asset_content_type: text/plain
 
       - name: Save Linux signature as artifact
-        if: hashFiles('apps/desktop/src-tauri/target/release/bundle/appimage/Meet Scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage.sig') != ''
+        if: hashFiles('apps/desktop/src-tauri/target/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage.sig') != ''
         uses: actions/upload-artifact@v4
         with:
           name: linux-sig
-          path: apps/desktop/src-tauri/target/release/bundle/appimage/Meet Scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage.sig
+          path: apps/desktop/src-tauri/target/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage.sig
           retention-days: 1
 
   # Generate and upload updater manifest
@@ -363,15 +363,15 @@ jobs:
           WINDOWS_SIG=""
           LINUX_SIG=""
 
-          if [ -f "./sigs/Meet Scribe_${VERSION}_x64_en-US.msi.sig" ]; then
-            WINDOWS_SIG=$(cat "./sigs/Meet Scribe_${VERSION}_x64_en-US.msi.sig")
+          if [ -f "./sigs/meet-scribe_${VERSION}_x64_en-US.msi.sig" ]; then
+            WINDOWS_SIG=$(cat "./sigs/meet-scribe_${VERSION}_x64_en-US.msi.sig")
             echo "Found Windows signature"
           else
             echo "No Windows signature found (signing may not be configured)"
           fi
 
-          if [ -f "./sigs/Meet Scribe_${VERSION}_amd64.AppImage.sig" ]; then
-            LINUX_SIG=$(cat "./sigs/Meet Scribe_${VERSION}_amd64.AppImage.sig")
+          if [ -f "./sigs/meet-scribe_${VERSION}_amd64.AppImage.sig" ]; then
+            LINUX_SIG=$(cat "./sigs/meet-scribe_${VERSION}_amd64.AppImage.sig")
             echo "Found Linux signature"
           else
             echo "No Linux signature found (signing may not be configured)"

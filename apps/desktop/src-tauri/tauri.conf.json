@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Meet Scribe",
+  "productName": "meet-scribe",
   "version": "0.0.1",
   "identifier": "com.srprasanna.meet-scribe",
   "build": {
