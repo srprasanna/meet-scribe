@@ -12,7 +12,10 @@
   "bundle": {
     "active": true,
     "targets": ["deb", "appimage", "msi"],
-    "icon": [],
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
     "publisher": "Meet Scribe",
     "homepage": "https://github.com/srprasanna/meet-scribe",
     "longDescription": "A bot-free desktop meeting assistant that captures and transcribes meetings from Teams, Zoom, and Google Meet.",
