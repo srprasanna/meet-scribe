@@ -170,6 +170,23 @@ jobs:
           cd apps/desktop
           npm run build
 
+      - name: Check signing environment (Windows)
+        shell: pwsh
+        run: |
+          if ($env:TAURI_SIGNING_PRIVATE_KEY) {
+            Write-Host "TAURI_SIGNING_PRIVATE_KEY is set (length: $($env:TAURI_SIGNING_PRIVATE_KEY.Length))"
+          } else {
+            Write-Host "WARNING: TAURI_SIGNING_PRIVATE_KEY is NOT set"
+          }
+          if ($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
+            Write-Host "TAURI_SIGNING_PRIVATE_KEY_PASSWORD is set"
+          } else {
+            Write-Host "WARNING: TAURI_SIGNING_PRIVATE_KEY_PASSWORD is NOT set"
+          }
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
       - name: Build Tauri app
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -270,6 +287,22 @@ jobs:
         run: |
           cd apps/desktop
           npm run build
+
+      - name: Check signing environment (Linux)
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY is set (length: ${#TAURI_SIGNING_PRIVATE_KEY})"
+          else
+            echo "WARNING: TAURI_SIGNING_PRIVATE_KEY is NOT set"
+          fi
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD is set"
+          else
+            echo "WARNING: TAURI_SIGNING_PRIVATE_KEY_PASSWORD is NOT set"
+          fi
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Build Tauri app
         env:
