@@ -72,26 +72,34 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: |
           VERSION="${{ steps.get_version.outputs.version }}"
+          TAG="${{ steps.get_version.outputs.tag }}"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Commit version changes
-          git add apps/desktop/package.json apps/desktop/package-lock.json apps/desktop/src-tauri/tauri.conf.json apps/desktop/src-tauri/Cargo.toml apps/desktop/src-tauri/Cargo.lock
-          git commit -m "chore: bump version to ${VERSION}"
+          # Check if there are any changes to commit
+          if git diff --quiet apps/desktop/package.json apps/desktop/package-lock.json apps/desktop/src-tauri/tauri.conf.json apps/desktop/src-tauri/Cargo.toml apps/desktop/src-tauri/Cargo.lock; then
+            echo "No version changes detected, skipping commit"
+          else
+            # Commit version changes
+            git add apps/desktop/package.json apps/desktop/package-lock.json apps/desktop/src-tauri/tauri.conf.json apps/desktop/src-tauri/Cargo.toml apps/desktop/src-tauri/Cargo.lock
+            git commit -m "chore: bump version to ${VERSION}"
+            git push origin main
+          fi
 
-          # Create and push tag
-          git tag ${{ steps.get_version.outputs.tag }}
-
-          # Push to main and push tag
-          git push origin main
-          git push origin ${{ steps.get_version.outputs.tag }}
+          # Create and push tag (only if it doesn't exist)
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists, skipping tag creation"
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
 
       - name: Create GitHub Release
         id: create_release
         uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         with:
           tag_name: ${{ steps.get_version.outputs.tag }}
           release_name: Release ${{ steps.get_version.outputs.tag }}
@@ -163,6 +171,9 @@ jobs:
           npm run build
 
       - name: Build Tauri app
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           cd apps/desktop
           npm run tauri build
@@ -175,18 +186,37 @@ jobs:
       - name: Upload Windows MSI
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         with:
           upload_url: ${{ needs.prepare-release.outputs.upload_url }}
           asset_path: apps/desktop/src-tauri/target/release/bundle/msi/meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi
           asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi
           asset_content_type: application/x-msi
 
+      - name: Upload Windows MSI Signature
+        if: hashFiles('apps/desktop/src-tauri/target/release/bundle/msi/meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi.sig') != ''
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
+        with:
+          upload_url: ${{ needs.prepare-release.outputs.upload_url }}
+          asset_path: apps/desktop/src-tauri/target/release/bundle/msi/meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi.sig
+          asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi.sig
+          asset_content_type: text/plain
+
+      - name: Save Windows signature as artifact
+        if: hashFiles('apps/desktop/src-tauri/target/release/bundle/msi/meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi.sig') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-sig
+          path: apps/desktop/src-tauri/target/release/bundle/msi/meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi.sig
+          retention-days: 1
+
       - name: Upload Windows MSI (alternative path)
         if: failure()
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         with:
           upload_url: ${{ needs.prepare-release.outputs.upload_url }}
           asset_path: apps/desktop/src-tauri/target/release/bundle/msi/Meet Scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi
@@ -243,6 +273,9 @@ jobs:
           npm run build
 
       - name: Build Tauri app
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           cd apps/desktop
           npm run tauri build
@@ -262,7 +295,7 @@ jobs:
       - name: Upload Linux DEB
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         with:
           upload_url: ${{ needs.prepare-release.outputs.upload_url }}
           asset_path: apps/desktop/src-tauri/target/release/bundle/deb/meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.deb
@@ -272,9 +305,107 @@ jobs:
       - name: Upload Linux AppImage
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         with:
           upload_url: ${{ needs.prepare-release.outputs.upload_url }}
           asset_path: apps/desktop/src-tauri/target/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage
           asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage
           asset_content_type: application/octet-stream
+
+      - name: Upload Linux AppImage Signature
+        if: hashFiles('apps/desktop/src-tauri/target/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage.sig') != ''
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
+        with:
+          upload_url: ${{ needs.prepare-release.outputs.upload_url }}
+          asset_path: apps/desktop/src-tauri/target/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage.sig
+          asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage.sig
+          asset_content_type: text/plain
+
+      - name: Save Linux signature as artifact
+        if: hashFiles('apps/desktop/src-tauri/target/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage.sig') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-sig
+          path: apps/desktop/src-tauri/target/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage.sig
+          retention-days: 1
+
+  # Generate and upload updater manifest
+  create-updater-manifest:
+    needs: [prepare-release, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows signature
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: windows-sig
+          path: ./sigs
+
+      - name: Download Linux signature
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: linux-sig
+          path: ./sigs
+
+      - name: Generate and upload latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          VERSION="${{ needs.prepare-release.outputs.version }}"
+          TAG="${{ needs.prepare-release.outputs.tag }}"
+          REPO="${{ github.repository }}"
+
+          # Read signature files if they exist
+          WINDOWS_SIG=""
+          LINUX_SIG=""
+
+          if [ -f "./sigs/meet-scribe_${VERSION}_x64_en-US.msi.sig" ]; then
+            WINDOWS_SIG=$(cat "./sigs/meet-scribe_${VERSION}_x64_en-US.msi.sig")
+            echo "Found Windows signature"
+          else
+            echo "No Windows signature found (signing may not be configured)"
+          fi
+
+          if [ -f "./sigs/meet-scribe_${VERSION}_amd64.AppImage.sig" ]; then
+            LINUX_SIG=$(cat "./sigs/meet-scribe_${VERSION}_amd64.AppImage.sig")
+            echo "Found Linux signature"
+          else
+            echo "No Linux signature found (signing may not be configured)"
+          fi
+
+          # Create the updater manifest JSON
+          cat > latest.json << EOF
+          {
+            "version": "$TAG",
+            "notes": "See full release notes at https://github.com/$REPO/releases/tag/$TAG",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "windows-x86_64": {
+                "signature": "$WINDOWS_SIG",
+                "url": "https://github.com/$REPO/releases/download/$TAG/meet-scribe_${VERSION}_x64_en-US.msi"
+              },
+              "linux-x86_64": {
+                "signature": "$LINUX_SIG",
+                "url": "https://github.com/$REPO/releases/download/$TAG/meet-scribe_${VERSION}_amd64.AppImage"
+              }
+            }
+          }
+          EOF
+
+          echo "Generated latest.json:"
+          cat latest.json
+
+          # Upload to release
+          UPLOAD_URL="${{ needs.prepare-release.outputs.upload_url }}"
+          UPLOAD_URL="${UPLOAD_URL%\{*}"  # Remove the {?name,label} template part
+
+          curl -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @latest.json \
+            "${UPLOAD_URL}?name=latest.json"
