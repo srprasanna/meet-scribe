@@ -24,6 +24,7 @@ export interface Transcript {
   id?: number;
   meeting_id: number;
   participant_id?: number;
+  participant_name?: string;
   speaker_label?: string;
   timestamp_ms: number;
   text: string;
@@ -59,6 +60,7 @@ export interface TranscriptionConfig {
   enable_diarization: boolean;
   num_speakers?: number;
   language?: string;
+  model?: string;
   additional_settings?: Record<string, unknown>;
 }
 

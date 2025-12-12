@@ -9,7 +9,8 @@
 
 use crate::error::{AppError, Result};
 use crate::ports::transcription::{
-    TranscriptionConfig, TranscriptionResult, TranscriptionSegment, TranscriptionServicePort,
+    StreamingSession, StreamingTranscriptionCallback, TranscriptionConfig, TranscriptionResult,
+    TranscriptionSegment, TranscriptionServicePort,
 };
 use async_trait::async_trait;
 use reqwest::Client;
@@ -93,6 +94,7 @@ impl AssemblyAIService {
             speaker_labels: config.enable_diarization,
             speakers_expected: config.num_speakers,
             language_code: config.language.clone(),
+            speech_model: config.model.clone(),
         };
 
         let response = self
@@ -305,12 +307,29 @@ impl TranscriptionServicePort for AssemblyAIService {
         result
     }
 
+    async fn start_streaming(
+        &self,
+        _config: &TranscriptionConfig,
+        _callback: Box<dyn StreamingTranscriptionCallback>,
+    ) -> Result<Box<dyn StreamingSession>> {
+        // TODO: Implement AssemblyAI streaming
+        // AssemblyAI supports streaming via WebSocket at wss://api.assemblyai.com/v2/realtime/ws
+        // For now, return an error indicating streaming is not yet implemented
+        Err(AppError::Transcription(
+            "AssemblyAI streaming not yet implemented. Use Deepgram for streaming transcription.".to_string()
+        ))
+    }
+
     fn provider_name(&self) -> &str {
         "AssemblyAI"
     }
 
     fn is_configured(&self) -> bool {
         !self.api_key.is_empty()
+    }
+
+    fn supports_streaming(&self) -> bool {
+        false // TODO: Implement AssemblyAI streaming support
     }
 }
 
@@ -325,6 +344,8 @@ struct TranscriptionRequest {
     speakers_expected: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     language_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    speech_model: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

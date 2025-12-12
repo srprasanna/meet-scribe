@@ -30,6 +30,10 @@ anyhow = "1.0"
 # HTTP client for API calls
 reqwest = { version = "0.12", features = ["json", "multipart", "stream"] }
 
+# WebSocket for streaming transcription
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+futures-util = "0.3"
+
 # Secret storage (OS keychain)
 keyring = { version = "2.3", features = ["platform-all"] }
 

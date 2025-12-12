@@ -86,8 +86,9 @@ pub struct Transcript {
     pub id: Option<i64>,
     pub meeting_id: i64,
     pub participant_id: Option<i64>,
-    pub speaker_label: Option<String>, // "Speaker 1", "Speaker 2", etc. from diarization
-    pub timestamp_ms: i64,             // Milliseconds into meeting
+    pub participant_name: Option<String>, // Actual participant name if linked
+    pub speaker_label: Option<String>,    // "Speaker 1", "Speaker 2", etc. from diarization
+    pub timestamp_ms: i64,                // Milliseconds into meeting
     pub text: String,
     pub confidence: Option<f32>, // 0.0 to 1.0
     pub created_at: i64,
@@ -100,6 +101,7 @@ impl Transcript {
             id: None,
             meeting_id,
             participant_id: None,
+            participant_name: None,
             speaker_label: None,
             timestamp_ms,
             text,
@@ -120,6 +122,7 @@ impl Transcript {
             id: None,
             meeting_id,
             participant_id: None,
+            participant_name: None,
             speaker_label,
             timestamp_ms,
             text,

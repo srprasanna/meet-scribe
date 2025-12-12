@@ -359,7 +359,10 @@ pub async fn generate_meeting_insights(
     let full_transcript = transcripts
         .iter()
         .map(|t| {
-            if let Some(speaker) = &t.speaker_label {
+            // Prefer participant_name over speaker_label
+            if let Some(name) = &t.participant_name {
+                format!("[{}]: {}", name, t.text)
+            } else if let Some(speaker) = &t.speaker_label {
                 format!("[{}]: {}", speaker, t.text)
             } else {
                 t.text.clone()

@@ -226,14 +226,21 @@ impl StoragePort for SqliteStorage {
         Ok(())
     }
 
+    async fn delete_participant(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM participants WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
     async fn create_transcript(&self, transcript: &Transcript) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO transcripts (meeting_id, participant_id, timestamp_ms, text, confidence, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO transcripts (meeting_id, participant_id, speaker_label, timestamp_ms, text, confidence, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 transcript.meeting_id,
                 transcript.participant_id,
+                transcript.speaker_label,
                 transcript.timestamp_ms,
                 transcript.text,
                 transcript.confidence,
@@ -246,8 +253,11 @@ impl StoragePort for SqliteStorage {
     async fn get_transcripts(&self, meeting_id: i64) -> Result<Vec<Transcript>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, meeting_id, participant_id, speaker_label, timestamp_ms, text, confidence, created_at
-             FROM transcripts WHERE meeting_id = ?1 ORDER BY timestamp_ms",
+            "SELECT t.id, t.meeting_id, t.participant_id, p.name, t.speaker_label, t.timestamp_ms, t.text, t.confidence, t.created_at
+             FROM transcripts t
+             LEFT JOIN participants p ON t.participant_id = p.id
+             WHERE t.meeting_id = ?1
+             ORDER BY t.timestamp_ms",
         )?;
 
         let rows = stmt.query_map(params![meeting_id], |row| {
@@ -255,11 +265,12 @@ impl StoragePort for SqliteStorage {
                 id: Some(row.get(0)?),
                 meeting_id: row.get(1)?,
                 participant_id: row.get(2)?,
-                speaker_label: row.get(3)?,
-                timestamp_ms: row.get(4)?,
-                text: row.get(5)?,
-                confidence: row.get(6)?,
-                created_at: row.get(7)?,
+                participant_name: row.get(3)?,
+                speaker_label: row.get(4)?,
+                timestamp_ms: row.get(5)?,
+                text: row.get(6)?,
+                confidence: row.get(7)?,
+                created_at: row.get(8)?,
             })
         })?;
 
@@ -298,6 +309,23 @@ impl StoragePort for SqliteStorage {
         tx.commit()?;
 
         Ok(ids)
+    }
+
+    async fn update_transcript(&self, transcript: &Transcript) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE transcripts SET meeting_id = ?1, participant_id = ?2, speaker_label = ?3, timestamp_ms = ?4, text = ?5, confidence = ?6 WHERE id = ?7",
+            params![
+                transcript.meeting_id,
+                transcript.participant_id,
+                transcript.speaker_label,
+                transcript.timestamp_ms,
+                transcript.text,
+                transcript.confidence,
+                transcript.id,
+            ],
+        )?;
+        Ok(())
     }
 
     async fn create_insight(&self, insight: &Insight) -> Result<i64> {

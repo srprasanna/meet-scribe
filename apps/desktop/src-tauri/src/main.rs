@@ -39,7 +39,11 @@ pub struct AppState {
 /// Sets up database connection and runs migrations.
 fn initialize_app(
     app: &tauri::AppHandle,
-) -> Result<(AppState, commands::transcription::TranscriptionState)> {
+) -> Result<(
+    AppState,
+    commands::transcription::TranscriptionState,
+    commands::streaming::StreamingTranscriptionState,
+)> {
     // Get application data directory
     let app_dir = app
         .path()
@@ -72,7 +76,9 @@ fn initialize_app(
         current_transcription: Arc::new(Mutex::new(None)),
     };
 
-    Ok((app_state, transcription_state))
+    let streaming_state = commands::streaming::StreamingTranscriptionState::new();
+
+    Ok((app_state, transcription_state, streaming_state))
 }
 
 /// Example Tauri command - gets application version
@@ -99,9 +105,10 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             // Initialize app state
-            let (app_state, transcription_state) = initialize_app(app.handle())?;
+            let (app_state, transcription_state, streaming_state) = initialize_app(app.handle())?;
             app.manage(app_state);
             app.manage(transcription_state);
+            app.manage(streaming_state);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -127,12 +134,18 @@ fn main() {
             commands::meeting::get_meeting_history,
             commands::meeting::get_meeting,
             commands::meeting::delete_meeting,
-            // Transcription commands
+            // Transcription commands (batch)
             commands::transcription::start_transcription,
             commands::transcription::get_transcription_status,
             commands::transcription::get_transcripts,
             commands::transcription::is_transcription_available,
             commands::transcription::delete_transcripts,
+            commands::transcription::fetch_asr_models,
+            // Streaming transcription commands (real-time)
+            commands::streaming::start_streaming_transcription,
+            commands::streaming::stop_streaming_transcription,
+            commands::streaming::send_audio_chunk,
+            commands::streaming::get_streaming_transcription_status,
             // LLM commands
             commands::llm::fetch_llm_models,
             commands::llm::save_llm_api_key,
@@ -144,6 +157,11 @@ fn main() {
             commands::llm::generate_meeting_insights,
             commands::llm::get_meeting_insights,
             commands::llm::delete_meeting_insights,
+            // Participant commands
+            commands::participant::get_speaker_summary,
+            commands::participant::link_speaker_to_participant,
+            commands::participant::unlink_speaker,
+            commands::participant::delete_meeting_participants,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

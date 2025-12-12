@@ -1,11 +1,12 @@
 //! ASR (Automatic Speech Recognition) service adapters
 //!
 //! This module provides adapters for different ASR providers:
-//! - AssemblyAI: File upload with polling
-//! - Deepgram: Streaming API
+//! - AssemblyAI: File upload with polling (batch) and WebSocket (streaming)
+//! - Deepgram: REST API (batch) and WebSocket (streaming)
 
 pub mod assemblyai;
 pub mod deepgram;
+mod deepgram_streaming;
 
 pub use assemblyai::AssemblyAIService;
 pub use deepgram::DeepgramService;

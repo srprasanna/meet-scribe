@@ -118,8 +118,62 @@ pub async fn start_transcription(
     println!(">>> Active ASR service: {}", asr_service.provider_name());
     log::info!("Active ASR service: {}", asr_service.provider_name());
 
-    // Use provided config or defaults
-    let transcription_config = config.unwrap_or_default();
+    // Use provided config or load from active service configuration
+    let transcription_config = if let Some(cfg) = config {
+        println!(">>> Using provided config: model={:?}", cfg.model);
+        log::info!("Using provided config: model={:?}", cfg.model);
+        cfg
+    } else {
+        println!(">>> No config provided, loading from service configuration");
+        log::info!("No config provided, loading from service configuration");
+
+        // Load model from active service configuration
+        let mut default_config = TranscriptionConfig::default();
+
+        match state.storage.get_active_service_config("asr").await {
+            Ok(Some(service_config)) => {
+                println!(">>> Found active ASR service config: provider={}, settings={:?}",
+                    service_config.provider, service_config.settings);
+                log::info!("Found active ASR service config: provider={}, settings={:?}",
+                    service_config.provider, service_config.settings);
+
+                if let Some(settings_str) = service_config.settings {
+                    match serde_json::from_str::<serde_json::Value>(&settings_str) {
+                        Ok(settings) => {
+                            println!(">>> Parsed settings JSON: {:?}", settings);
+                            log::info!("Parsed settings JSON: {:?}", settings);
+
+                            if let Some(model) = settings.get("model").and_then(|m| m.as_str()) {
+                                default_config.model = Some(model.to_string());
+                                println!(">>> Using model from service config: {}", model);
+                                log::info!("Using model from service config: {}", model);
+                            } else {
+                                println!("!!! No model field found in settings");
+                                log::warn!("No model field found in settings");
+                            }
+                        }
+                        Err(e) => {
+                            println!("!!! Failed to parse settings JSON: {}", e);
+                            log::error!("Failed to parse settings JSON: {}", e);
+                        }
+                    }
+                } else {
+                    println!("!!! Active service config has no settings");
+                    log::warn!("Active service config has no settings");
+                }
+            }
+            Ok(None) => {
+                println!("!!! No active ASR service configuration found");
+                log::warn!("No active ASR service configuration found");
+            }
+            Err(e) => {
+                println!("!!! Failed to get active ASR service config: {}", e);
+                log::error!("Failed to get active ASR service config: {}", e);
+            }
+        }
+
+        default_config
+    };
 
     // Clone state for the background task
     let storage = Arc::clone(&state.storage);
@@ -136,9 +190,16 @@ pub async fn start_transcription(
         log::info!("=== TRANSCRIPTION BACKGROUND TASK STARTED ===");
         log::info!("Transcribing audio file: {}", audio_file_path);
         log::info!(
-            "Transcription config: diarization={}, language={:?}",
+            "Transcription config: diarization={}, language={:?}, model={:?}",
             transcription_config.enable_diarization,
-            transcription_config.language
+            transcription_config.language,
+            transcription_config.model
+        );
+        println!(
+            ">>> Transcription config: diarization={}, language={:?}, model={:?}",
+            transcription_config.enable_diarization,
+            transcription_config.language,
+            transcription_config.model
         );
 
         // Force flush logs to console
@@ -186,7 +247,8 @@ pub async fn start_transcription(
             .map(|segment| Transcript {
                 id: None,
                 meeting_id,
-                participant_id: None, // TODO: Link to participant in Phase 5
+                participant_id: None,
+                participant_name: None,
                 speaker_label: segment.speaker_label, // Diarization speaker label
                 timestamp_ms: segment.start_ms,
                 text: segment.text,
@@ -290,6 +352,156 @@ pub async fn delete_transcripts(
         .delete_transcripts(meeting_id)
         .await
         .map_err(|e| format!("Failed to delete transcripts: {}", e))
+}
+
+/// Fetch available models from an ASR provider
+///
+/// # Arguments
+/// * `provider` - The ASR provider ("deepgram" or "assemblyai")
+/// * `state` - Application state with keychain access
+///
+/// # Returns
+/// * List of available models with their metadata
+#[tauri::command]
+pub async fn fetch_asr_models(
+    provider: String,
+    _state: State<'_, TranscriptionState>,
+) -> Result<Vec<serde_json::Value>, String> {
+
+    log::info!("Fetching ASR models for provider: {}", provider);
+
+    match provider.as_str() {
+        "deepgram" => {
+            // Deepgram models based on official documentation
+            // Source: https://developers.deepgram.com/docs/model
+            Ok(vec![
+                // Flux - Conversational STT for voice agents
+                serde_json::json!({
+                    "id": "flux-general-en",
+                    "name": "Flux",
+                    "description": "Conversational STT built for voice agents with turn-taking detection"
+                }),
+                // Nova-3 - Latest generation
+                serde_json::json!({
+                    "id": "nova-3",
+                    "name": "Nova-3",
+                    "description": "Latest generation model with industry-leading accuracy"
+                }),
+                serde_json::json!({
+                    "id": "nova-3-medical",
+                    "name": "Nova-3 Medical",
+                    "description": "Medical terminology optimized"
+                }),
+                // Nova-2 - Second generation
+                serde_json::json!({
+                    "id": "nova-2",
+                    "name": "Nova-2",
+                    "description": "General purpose model"
+                }),
+                serde_json::json!({
+                    "id": "nova-2-meeting",
+                    "name": "Nova-2 Meeting",
+                    "description": "Optimized for meeting transcription"
+                }),
+                serde_json::json!({
+                    "id": "nova-2-phonecall",
+                    "name": "Nova-2 Phonecall",
+                    "description": "Optimized for phone call audio"
+                }),
+                serde_json::json!({
+                    "id": "nova-2-conversationalai",
+                    "name": "Nova-2 Conversational AI",
+                    "description": "Optimized for conversational AI applications"
+                }),
+                serde_json::json!({
+                    "id": "nova-2-voicemail",
+                    "name": "Nova-2 Voicemail",
+                    "description": "Optimized for voicemail transcription"
+                }),
+                serde_json::json!({
+                    "id": "nova-2-finance",
+                    "name": "Nova-2 Finance",
+                    "description": "Financial terminology optimized"
+                }),
+                serde_json::json!({
+                    "id": "nova-2-video",
+                    "name": "Nova-2 Video",
+                    "description": "Optimized for video content"
+                }),
+                serde_json::json!({
+                    "id": "nova-2-medical",
+                    "name": "Nova-2 Medical",
+                    "description": "Medical terminology optimized"
+                }),
+                // Nova - First generation
+                serde_json::json!({
+                    "id": "nova",
+                    "name": "Nova",
+                    "description": "First generation Nova model"
+                }),
+                // Enhanced - Premium accuracy
+                serde_json::json!({
+                    "id": "enhanced",
+                    "name": "Enhanced",
+                    "description": "Premium accuracy model"
+                }),
+                serde_json::json!({
+                    "id": "enhanced-meeting",
+                    "name": "Enhanced Meeting",
+                    "description": "Enhanced model for meetings"
+                }),
+                serde_json::json!({
+                    "id": "enhanced-phonecall",
+                    "name": "Enhanced Phonecall",
+                    "description": "Enhanced model for phone calls"
+                }),
+                // Base - Cost-effective
+                serde_json::json!({
+                    "id": "base",
+                    "name": "Base",
+                    "description": "Cost-effective model"
+                }),
+                // Whisper models (OpenAI via Deepgram)
+                serde_json::json!({
+                    "id": "whisper-large",
+                    "name": "Whisper Large",
+                    "description": "OpenAI Whisper large model"
+                }),
+                serde_json::json!({
+                    "id": "whisper-medium",
+                    "name": "Whisper Medium",
+                    "description": "OpenAI Whisper medium model"
+                }),
+                serde_json::json!({
+                    "id": "whisper-small",
+                    "name": "Whisper Small",
+                    "description": "OpenAI Whisper small model"
+                }),
+            ])
+        }
+        "assemblyai" => {
+            // AssemblyAI doesn't have a models API, return static list based on their documentation
+            // Source: https://www.assemblyai.com/docs/getting-started/models
+            Ok(vec![
+                serde_json::json!({
+                    "id": "universal",
+                    "name": "Universal",
+                    "description": "Best for pre-recorded audio (most accurate)"
+                }),
+                serde_json::json!({
+                    "id": "universal-streaming",
+                    "name": "Universal Streaming",
+                    "description": "Optimized for real-time streaming audio"
+                }),
+                serde_json::json!({
+                    "id": "slam-1",
+                    "name": "SLAM-1",
+                    "description": "Fast model for lower latency applications"
+                }),
+            ])
+        }
+        _ => Err(format!("Unknown ASR provider: {}", provider)),
+    }
 }
 
 #[cfg(test)]
