@@ -9,21 +9,16 @@ import {
   Text,
   Input,
   Button,
-  Card,
-  CardBody,
-  Tabs,
-  TabList,
-  TabPanels,
-  Tab,
-  TabPanel,
   Badge,
   Link,
-  Switch,
-  FormControl,
-  FormLabel,
-  Select,
-  useToast,
+  createToaster,
+  Toaster,
 } from "@chakra-ui/react";
+
+const toaster = createToaster({
+  placement: "top-end",
+  duration: 5000,
+});
 
 /// Settings page - configure API keys and services
 
@@ -82,8 +77,6 @@ interface ModelInfo {
 }
 
 function Settings() {
-  const toast = useToast();
-
   // ASR state
   const [asrConfigs, setAsrConfigs] = useState<Record<string, ServiceConfig>>({});
   const [asrApiKeys, setAsrApiKeys] = useState<Record<string, string>>({});
@@ -104,6 +97,7 @@ function Settings() {
 
   // Loading states
   const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const [activeTab, setActiveTab] = useState<"asr" | "llm">("asr");
 
   // Load all configurations on mount
   useEffect(() => {
@@ -123,12 +117,11 @@ function Settings() {
       }
     } catch (err) {
       console.error("Error loading configs:", err);
-      toast({
+      toaster.create({
         title: "Error loading configurations",
         description: String(err),
-        status: "error",
+        type: "error",
         duration: 5000,
-        isClosable: true,
       });
     }
   };
@@ -220,12 +213,11 @@ function Settings() {
     const key = serviceType === "asr" ? asrApiKeys[provider] : llmApiKeys[provider];
 
     if (!key || key.trim() === "") {
-      toast({
+      toaster.create({
         title: "Error",
         description: "Please enter an API key",
-        status: "error",
+        type: "error",
         duration: 3000,
-        isClosable: true,
       });
       return;
     }
@@ -252,20 +244,18 @@ function Settings() {
       // Reload config to update status
       await loadConfig(serviceType, provider);
 
-      toast({
+      toaster.create({
         title: "Success",
         description: `API key saved successfully for ${provider}`,
-        status: "success",
+        type: "success",
         duration: 3000,
-        isClosable: true,
       });
     } catch (err) {
-      toast({
+      toaster.create({
         title: "Error",
         description: `Failed to save API key: ${err}`,
-        status: "error",
+        type: "error",
         duration: 5000,
-        isClosable: true,
       });
     } finally {
       setLoading((prev) => ({ ...prev, [`${serviceType}_${provider}`]: false }));
@@ -304,20 +294,18 @@ function Settings() {
         setLlmModelChanged((prev) => ({ ...prev, [provider]: false }));
       }
 
-      toast({
+      toaster.create({
         title: "Success",
         description: `${provider} activated with selected model`,
-        status: "success",
+        type: "success",
         duration: 3000,
-        isClosable: true,
       });
     } catch (err) {
-      toast({
+      toaster.create({
         title: "Error",
         description: `Failed to save model: ${err}`,
-        status: "error",
+        type: "error",
         duration: 5000,
-        isClosable: true,
       });
     } finally {
       setLoading((prev) => ({ ...prev, [`model_${serviceType}_${provider}`]: false }));
@@ -361,20 +349,18 @@ function Settings() {
         }
       }
 
-      toast({
+      toaster.create({
         title: "Success",
         description: `${provider} ${activate ? "activated" : "deactivated"} successfully`,
-        status: "success",
+        type: "success",
         duration: 3000,
-        isClosable: true,
       });
     } catch (err) {
-      toast({
+      toaster.create({
         title: "Error",
         description: `Failed to ${activate ? "activate" : "deactivate"} service: ${err}`,
-        status: "error",
+        type: "error",
         duration: 5000,
-        isClosable: true,
       });
     } finally {
       setLoading((prev) => ({ ...prev, [loadingKey]: false }));
@@ -397,20 +383,18 @@ function Settings() {
       // Reload config
       await loadConfig(serviceType, provider);
 
-      toast({
+      toaster.create({
         title: "Success",
         description: `API key deleted for ${provider}`,
-        status: "success",
+        type: "success",
         duration: 3000,
-        isClosable: true,
       });
     } catch (err) {
-      toast({
+      toaster.create({
         title: "Error",
         description: `Failed to delete API key: ${err}`,
-        status: "error",
+        type: "error",
         duration: 5000,
-        isClosable: true,
       });
     } finally {
       setLoading((prev) => ({ ...prev, [`delete_${serviceType}_${provider}`]: false }));
@@ -452,194 +436,206 @@ function Settings() {
     }
 
     return (
-      <Card
+      <Box
         key={provider}
-        variant="outline"
         borderWidth={isActive ? "2px" : "1px"}
         borderColor={isActive ? "green.500" : "gray.200"}
         bg={isActive ? "green.50" : "white"}
+        borderRadius="md"
+        p={6}
       >
-        <CardBody>
-          <VStack align="stretch" spacing={4}>
-            {/* Header */}
-            <HStack justify="space-between" align="center">
-              <Heading size="md">{providerConfig.name}</Heading>
-              <HStack>
-                {isActive && (
-                  <Badge colorScheme="green" fontSize="xs" px={3} py={1}>
-                    ACTIVE
-                  </Badge>
-                )}
-                {hasKey && savedModel && (
-                  <Switch
-                    isChecked={isActive}
+        <VStack align="stretch" gap={4}>
+          {/* Header */}
+          <HStack justify="space-between" align="center">
+            <Heading size="md">{providerConfig.name}</Heading>
+            <HStack gap={2}>
+              {isActive && (
+                <Badge colorScheme="green" fontSize="xs" px={3} py={1}>
+                  ACTIVE
+                </Badge>
+              )}
+              {hasKey && savedModel && (
+                <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={isActive}
                     onChange={(e) => handleToggleService(serviceType, provider, e.target.checked)}
-                    isDisabled={loading[`activate_${serviceType}_${provider}`] || loading[`deactivate_${serviceType}_${provider}`]}
-                    colorScheme="green"
+                    disabled={loading[`activate_${serviceType}_${provider}`] || loading[`deactivate_${serviceType}_${provider}`]}
+                    style={{ width: "20px", height: "20px", cursor: "pointer" }}
                   />
-                )}
-              </HStack>
+                  <Text fontSize="sm">Active</Text>
+                </label>
+              )}
             </HStack>
+          </HStack>
 
-            <Text fontSize="sm" color="gray.600">
-              <Link href={providerConfig.signupUrl} isExternal color="blue.500">
-                Sign up for {providerConfig.name}
-              </Link>
-            </Text>
+          <Text fontSize="sm" color="gray.600">
+            <Link href={providerConfig.signupUrl} target="_blank" rel="noopener noreferrer" color="blue.500">
+              Sign up for {providerConfig.name}
+            </Link>
+          </Text>
 
-            {/* API Key Section */}
-            <FormControl>
-              <FormLabel fontWeight="bold">API Key</FormLabel>
-              {hasKey ? (
-                <HStack>
-                  <Box flex={1} p={2} bg="gray.100" borderRadius="md" fontFamily="monospace" fontSize="sm">
-                    {keyStatus.masked_key}
-                  </Box>
+          {/* API Key Section */}
+          <Box>
+            <Text fontWeight="bold" mb={2}>API Key</Text>
+            {hasKey ? (
+              <HStack gap={2}>
+                <Box flex={1} p={2} bg="gray.100" borderRadius="md" fontFamily="monospace" fontSize="sm">
+                  {keyStatus.masked_key}
+                </Box>
+                <Button
+                  size="sm"
+                  colorScheme="red"
+                  onClick={() => handleDeleteApiKey(serviceType, provider)}
+                  loading={loading[`delete_${serviceType}_${provider}`]}
+                >
+                  Delete
+                </Button>
+              </HStack>
+            ) : (
+              <HStack gap={2}>
+                <Input
+                  type="password"
+                  placeholder="Enter API Key"
+                  value={apiKey}
+                  onChange={(e) => {
+                    if (serviceType === "asr") {
+                      setAsrApiKeys((prev) => ({ ...prev, [provider]: e.target.value }));
+                    } else {
+                      setLlmApiKeys((prev) => ({ ...prev, [provider]: e.target.value }));
+                    }
+                  }}
+                />
+                <Button
+                  colorScheme="blue"
+                  onClick={() => handleSaveApiKey(serviceType, provider)}
+                  loading={isLoading}
+                >
+                  Save
+                </Button>
+              </HStack>
+            )}
+          </Box>
+
+          {/* Model Selection */}
+          {hasKey && (
+            <Box>
+              <Text fontWeight="bold" mb={2}>
+                Model
+                {modelsLoading[provider] && (
+                  <Text as="span" fontWeight="normal" ml={2} color="gray.500">
+                    (Loading models...)
+                  </Text>
+                )}
+              </Text>
+              <VStack align="stretch" gap={2}>
+                <select
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: "6px",
+                    border: "1px solid #E2E8F0",
+                    fontSize: "14px",
+                  }}
+                  value={selectedModel}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                    const model = e.target.value;
+                    if (serviceType === "asr") {
+                      setAsrModels((prev) => ({ ...prev, [provider]: model }));
+                      setAsrModelChanged((prev) => ({ ...prev, [provider]: model !== savedModel }));
+                    } else {
+                      setLlmModels((prev) => ({ ...prev, [provider]: model }));
+                      setLlmModelChanged((prev) => ({ ...prev, [provider]: model !== savedModel }));
+                    }
+                  }}
+                  disabled={modelsLoading[provider]}
+                >
+                  <option value="">Select a model</option>
+                  {serviceType === "asr" && availableModels[provider]?.map((model) => {
+                    const modelId = model.canonical_name || model.id || model.name;
+                    const modelName = model.name || model.id;
+                    const modelVersion = model.version ? ` (${model.version})` : "";
+                    const modelDesc = model.description ? ` - ${model.description}` : "";
+                    const displayName = `${modelName}${modelVersion}${modelDesc}`;
+
+                    return (
+                      <option key={modelId} value={modelId}>
+                        {displayName}
+                      </option>
+                    );
+                  })}
+                  {serviceType === "llm" &&
+                    availableModels[provider]
+                      ?.slice()
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map((model) => (
+                        <option
+                          key={model.id}
+                          value={model.id}
+                          title={`Context: ${model.context_window.toLocaleString()} tokens`}
+                        >
+                          {model.name} ({model.context_window.toLocaleString()} tokens)
+                          {model.is_fallback_context_window && " ⚠️"}
+                        </option>
+                      ))}
+                </select>
+
+                {hasModelChanged && selectedModel && (
                   <Button
                     size="sm"
-                    colorScheme="red"
-                    onClick={() => handleDeleteApiKey(serviceType, provider)}
-                    isLoading={loading[`delete_${serviceType}_${provider}`]}
-                  >
-                    Delete
-                  </Button>
-                </HStack>
-              ) : (
-                <HStack>
-                  <Input
-                    type="password"
-                    placeholder="Enter API Key"
-                    value={apiKey}
-                    onChange={(e) => {
-                      if (serviceType === "asr") {
-                        setAsrApiKeys((prev) => ({ ...prev, [provider]: e.target.value }));
-                      } else {
-                        setLlmApiKeys((prev) => ({ ...prev, [provider]: e.target.value }));
-                      }
-                    }}
-                  />
-                  <Button
                     colorScheme="blue"
-                    onClick={() => handleSaveApiKey(serviceType, provider)}
-                    isLoading={isLoading}
+                    onClick={() => handleSaveModel(serviceType, provider)}
+                    loading={loading[`model_${serviceType}_${provider}`]}
                   >
-                    Save
+                    Save Model Selection
                   </Button>
-                </HStack>
-              )}
-            </FormControl>
+                )}
 
-            {/* Model Selection */}
-            {hasKey && (
-              <FormControl>
-                <FormLabel fontWeight="bold">
-                  Model
-                  {modelsLoading[provider] && (
-                    <Text as="span" fontWeight="normal" ml={2} color="gray.500">
-                      (Loading models...)
-                    </Text>
-                  )}
-                </FormLabel>
-                <VStack align="stretch" spacing={2}>
-                  <Select
-                    placeholder="Select a model"
-                    value={selectedModel}
-                    onChange={(e) => {
-                      const model = e.target.value;
-                      if (serviceType === "asr") {
-                        setAsrModels((prev) => ({ ...prev, [provider]: model }));
-                        setAsrModelChanged((prev) => ({ ...prev, [provider]: model !== savedModel }));
-                      } else {
-                        setLlmModels((prev) => ({ ...prev, [provider]: model }));
-                        setLlmModelChanged((prev) => ({ ...prev, [provider]: model !== savedModel }));
-                      }
-                    }}
-                    isDisabled={modelsLoading[provider]}
-                  >
-                    {serviceType === "asr" && availableModels[provider]?.map((model) => {
-                      const modelId = model.canonical_name || model.id || model.name;
-                      const modelName = model.name || model.id;
-                      const modelVersion = model.version ? ` (${model.version})` : "";
-                      const modelDesc = model.description ? ` - ${model.description}` : "";
-                      const displayName = `${modelName}${modelVersion}${modelDesc}`;
-
-                      return (
-                        <option key={modelId} value={modelId}>
-                          {displayName}
-                        </option>
-                      );
-                    })}
-                    {serviceType === "llm" &&
-                      availableModels[provider]
-                        ?.slice()
-                        .sort((a, b) => a.name.localeCompare(b.name))
-                        .map((model) => (
-                          <option
-                            key={model.id}
-                            value={model.id}
-                            title={`Context: ${model.context_window.toLocaleString()} tokens`}
-                          >
-                            {model.name} ({model.context_window.toLocaleString()} tokens)
-                            {model.is_fallback_context_window && " ⚠️"}
-                          </option>
-                        ))}
-                  </Select>
-
-                  {hasModelChanged && selectedModel && (
-                    <Button
-                      size="sm"
-                      colorScheme="blue"
-                      onClick={() => handleSaveModel(serviceType, provider)}
-                      isLoading={loading[`model_${serviceType}_${provider}`]}
-                    >
-                      Save Model Selection
-                    </Button>
-                  )}
-
-                  {availableModels[provider]?.length === 0 && !modelsLoading[provider] && (
-                    <Text fontSize="sm" color="gray.500">
-                      No models available. Check your API key or try saving it again.
-                    </Text>
-                  )}
-
-                  {serviceType === "llm" && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => fetchLlmModels(provider)}
-                      isLoading={llmModelsLoading[provider]}
-                    >
-                      Refresh Models
-                    </Button>
-                  )}
-                </VStack>
-              </FormControl>
-            )}
-
-            {/* Status Message */}
-            {hasKey && savedModel && (
-              <Box p={3} bg="blue.50" borderRadius="md" fontSize="sm">
-                {isActive ? (
-                  <Text color="blue.700" fontWeight="bold">
-                    ✓ This service is currently active and will be used for all{" "}
-                    {serviceType === "asr" ? "transcriptions" : "insights"}
-                  </Text>
-                ) : (
-                  <Text color="gray.600">
-                    💡 Use the toggle switch above to activate this service
+                {availableModels[provider]?.length === 0 && !modelsLoading[provider] && (
+                  <Text fontSize="sm" color="gray.500">
+                    No models available. Check your API key or try saving it again.
                   </Text>
                 )}
-              </Box>
-            )}
-          </VStack>
-        </CardBody>
-      </Card>
+
+                {serviceType === "llm" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => fetchLlmModels(provider)}
+                    loading={llmModelsLoading[provider]}
+                  >
+                    Refresh Models
+                  </Button>
+                )}
+              </VStack>
+            </Box>
+          )}
+
+          {/* Status Message */}
+          {hasKey && savedModel && (
+            <Box p={3} bg="blue.50" borderRadius="md" fontSize="sm">
+              {isActive ? (
+                <Text color="blue.700" fontWeight="bold">
+                  ✓ This service is currently active and will be used for all{" "}
+                  {serviceType === "asr" ? "transcriptions" : "insights"}
+                </Text>
+              ) : (
+                <Text color="gray.600">
+                  💡 Use the toggle switch above to activate this service
+                </Text>
+              )}
+            </Box>
+          )}
+        </VStack>
+      </Box>
     );
   };
 
   return (
-    <Container maxW="container.xl" py={8}>
-      <VStack align="stretch" spacing={6}>
+    <>
+      <Toaster toaster={toaster}>{() => <></>}</Toaster>
+      <Container maxW="container.xl" py={8}>
+        <VStack align="stretch" gap={6}>
         <Box>
           <Heading size="lg" mb={2}>
             Settings
@@ -649,50 +645,61 @@ function Settings() {
           </Text>
         </Box>
 
-        <Tabs variant="enclosed" colorScheme="blue">
-          <TabList>
-            <Tab>Transcription Services (ASR)</Tab>
-            <Tab>AI Analysis (LLM)</Tab>
-          </TabList>
+        {/* Custom Tabs */}
+        <Box>
+          <HStack gap={2} borderBottom="2px solid" borderColor="gray.200" mb={4}>
+            <Button
+              variant={activeTab === "asr" ? "solid" : "ghost"}
+              colorScheme={activeTab === "asr" ? "blue" : "gray"}
+              onClick={() => setActiveTab("asr")}
+              borderRadius="md md 0 0"
+            >
+              Transcription Services (ASR)
+            </Button>
+            <Button
+              variant={activeTab === "llm" ? "solid" : "ghost"}
+              colorScheme={activeTab === "llm" ? "blue" : "gray"}
+              onClick={() => setActiveTab("llm")}
+              borderRadius="md md 0 0"
+            >
+              AI Analysis (LLM)
+            </Button>
+          </HStack>
 
-          <TabPanels>
-            {/* ASR Services Tab */}
-            <TabPanel>
-              <VStack align="stretch" spacing={4}>
-                <Box>
-                  <Heading size="md" mb={2}>
-                    Speech Recognition Services
-                  </Heading>
-                  <Text fontSize="sm" color="gray.600">
-                    Configure your speech recognition service. Only one ASR service can be active at a time.
-                  </Text>
-                </Box>
+          {activeTab === "asr" && (
+            <VStack align="stretch" gap={4}>
+              <Box>
+                <Heading size="md" mb={2}>
+                  Speech Recognition Services
+                </Heading>
+                <Text fontSize="sm" color="gray.600">
+                  Configure your speech recognition service. Only one ASR service can be active at a time.
+                </Text>
+              </Box>
 
-                {Object.entries(ASR_PROVIDERS).map(([provider, config]) =>
-                  renderServiceCard("asr", provider, config)
-                )}
-              </VStack>
-            </TabPanel>
+              {Object.entries(ASR_PROVIDERS).map(([provider, config]) =>
+                renderServiceCard("asr", provider, config)
+              )}
+            </VStack>
+          )}
 
-            {/* LLM Services Tab */}
-            <TabPanel>
-              <VStack align="stretch" spacing={4}>
-                <Box>
-                  <Heading size="md" mb={2}>
-                    Language Model Services
-                  </Heading>
-                  <Text fontSize="sm" color="gray.600">
-                    Configure your language model service. Only one LLM service can be active at a time.
-                  </Text>
-                </Box>
+          {activeTab === "llm" && (
+            <VStack align="stretch" gap={4}>
+              <Box>
+                <Heading size="md" mb={2}>
+                  Language Model Services
+                </Heading>
+                <Text fontSize="sm" color="gray.600">
+                  Configure your language model service. Only one LLM service can be active at a time.
+                </Text>
+              </Box>
 
-                {Object.entries(LLM_PROVIDERS).map(([provider, config]) =>
-                  renderServiceCard("llm", provider, config)
-                )}
-              </VStack>
-            </TabPanel>
-          </TabPanels>
-        </Tabs>
+              {Object.entries(LLM_PROVIDERS).map(([provider, config]) =>
+                renderServiceCard("llm", provider, config)
+              )}
+            </VStack>
+          )}
+        </Box>
 
         {/* Security Note */}
         <Box p={4} bg="orange.50" borderRadius="md">
@@ -706,6 +713,7 @@ function Settings() {
         </Box>
       </VStack>
     </Container>
+    </>
   );
 }
 
