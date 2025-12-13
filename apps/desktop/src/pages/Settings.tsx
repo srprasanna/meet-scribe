@@ -14,6 +14,16 @@ import {
   createToaster,
   Toaster,
 } from "@chakra-ui/react";
+import {
+  DialogRoot,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogBody,
+  DialogFooter,
+  DialogBackdrop,
+  DialogCloseTrigger,
+} from "@chakra-ui/react";
 
 const toaster = createToaster({
   placement: "top-end",
@@ -98,6 +108,13 @@ function Settings() {
   // Loading states
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [activeTab, setActiveTab] = useState<"asr" | "llm">("asr");
+
+  // Delete confirmation dialog state
+  const [deleteDialog, setDeleteDialog] = useState<{
+    open: boolean;
+    serviceType: string;
+    provider: string;
+  }>({ open: false, serviceType: "", provider: "" });
 
   // Load all configurations on mount
   useEffect(() => {
@@ -367,10 +384,17 @@ function Settings() {
     }
   };
 
-  const handleDeleteApiKey = async (serviceType: string, provider: string) => {
-    if (!confirm(`Are you sure you want to delete the API key for ${provider}?`)) {
-      return;
-    }
+  const openDeleteDialog = (serviceType: string, provider: string) => {
+    setDeleteDialog({ open: true, serviceType, provider });
+  };
+
+  const closeDeleteDialog = () => {
+    setDeleteDialog({ open: false, serviceType: "", provider: "" });
+  };
+
+  const handleDeleteApiKey = async () => {
+    const { serviceType, provider } = deleteDialog;
+    closeDeleteDialog();
 
     setLoading((prev) => ({ ...prev, [`delete_${serviceType}_${provider}`]: true }));
 
@@ -486,8 +510,10 @@ function Settings() {
                 <Button
                   size="sm"
                   colorScheme="red"
-                  onClick={() => handleDeleteApiKey(serviceType, provider)}
+                  onClick={() => openDeleteDialog(serviceType, provider)}
                   loading={loading[`delete_${serviceType}_${provider}`]}
+                  px={4}
+                  py={2}
                 >
                   Delete
                 </Button>
@@ -510,6 +536,8 @@ function Settings() {
                   colorScheme="blue"
                   onClick={() => handleSaveApiKey(serviceType, provider)}
                   loading={isLoading}
+                  px={4}
+                  py={2}
                 >
                   Save
                 </Button>
@@ -586,6 +614,8 @@ function Settings() {
                     colorScheme="blue"
                     onClick={() => handleSaveModel(serviceType, provider)}
                     loading={loading[`model_${serviceType}_${provider}`]}
+                    px={4}
+                    py={2}
                   >
                     Save Model Selection
                   </Button>
@@ -653,6 +683,8 @@ function Settings() {
               colorScheme={activeTab === "asr" ? "blue" : "gray"}
               onClick={() => setActiveTab("asr")}
               borderRadius="md md 0 0"
+              px={4}
+              py={2}
             >
               Transcription Services (ASR)
             </Button>
@@ -661,6 +693,8 @@ function Settings() {
               colorScheme={activeTab === "llm" ? "blue" : "gray"}
               onClick={() => setActiveTab("llm")}
               borderRadius="md md 0 0"
+              px={4}
+              py={2}
             >
               AI Analysis (LLM)
             </Button>
@@ -713,6 +747,47 @@ function Settings() {
         </Box>
       </VStack>
     </Container>
+
+      {/* Delete Confirmation Dialog */}
+      <DialogRoot open={deleteDialog.open} onOpenChange={(e) => e.open ? null : closeDeleteDialog()}>
+        <DialogBackdrop />
+        <DialogContent
+          maxW="md"
+          mx="auto"
+          my="auto"
+          position="fixed"
+          top="50%"
+          left="50%"
+          transform="translate(-50%, -50%)"
+        >
+          <DialogHeader p={4}>
+            <DialogTitle>Delete API Key</DialogTitle>
+            <DialogCloseTrigger onClick={closeDeleteDialog} />
+          </DialogHeader>
+          <DialogBody p={4} pt={0}>
+            <Text>
+              Are you sure you want to delete the API key for{" "}
+              <strong>
+                {deleteDialog.provider
+                  ? (ASR_PROVIDERS[deleteDialog.provider as keyof typeof ASR_PROVIDERS] ||
+                     LLM_PROVIDERS[deleteDialog.provider as keyof typeof LLM_PROVIDERS])?.name
+                  : ""}
+              </strong>
+              ? This action cannot be undone.
+            </Text>
+          </DialogBody>
+          <DialogFooter p={4} pt={0}>
+            <HStack gap={3}>
+              <Button variant="outline" onClick={closeDeleteDialog} px={4} py={2}>
+                Cancel
+              </Button>
+              <Button colorScheme="red" onClick={handleDeleteApiKey} px={4} py={2}>
+                Delete
+              </Button>
+            </HStack>
+          </DialogFooter>
+        </DialogContent>
+      </DialogRoot>
     </>
   );
 }

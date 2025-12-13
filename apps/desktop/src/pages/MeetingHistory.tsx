@@ -21,6 +21,19 @@ import {
   type SpeakerSummary,
 } from "../api/participant";
 import type { Transcript, InsightType, ServiceConfig } from "../types";
+import {
+  DialogRoot,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogBody,
+  DialogFooter,
+  DialogBackdrop,
+  DialogCloseTrigger,
+  Button,
+  HStack,
+  Text,
+} from "@chakra-ui/react";
 
 interface Meeting {
   id: number;
@@ -69,6 +82,27 @@ function MeetingHistory() {
   const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null);
   const [participantName, setParticipantName] = useState<string>("");
   const [participantEmail, setParticipantEmail] = useState<string>("");
+
+  // Confirmation dialog states
+  const [regenerateTranscriptDialog, setRegenerateTranscriptDialog] = useState<{
+    open: boolean;
+    meetingId: number | null;
+  }>({ open: false, meetingId: null });
+
+  const [regenerateInsightsDialog, setRegenerateInsightsDialog] = useState<{
+    open: boolean;
+    meetingId: number | null;
+  }>({ open: false, meetingId: null });
+
+  const [deleteMeetingDialog, setDeleteMeetingDialog] = useState<{
+    open: boolean;
+    meetingId: number | null;
+  }>({ open: false, meetingId: null });
+
+  const [unlinkSpeakerDialog, setUnlinkSpeakerDialog] = useState<{
+    open: boolean;
+    speakerLabel: string | null;
+  }>({ open: false, speakerLabel: null });
 
   useEffect(() => {
     loadMeetings();
@@ -152,10 +186,15 @@ function MeetingHistory() {
     }
   };
 
-  const handleRegenerateTranscripts = async (meetingId: number) => {
-    if (!confirm("Are you sure you want to regenerate the transcript? This will delete the existing transcript and speaker mappings.")) {
-      return;
-    }
+  const openRegenerateTranscriptDialog = (meetingId: number) => {
+    setRegenerateTranscriptDialog({ open: true, meetingId });
+  };
+
+  const handleRegenerateTranscripts = async () => {
+    const meetingId = regenerateTranscriptDialog.meetingId;
+    setRegenerateTranscriptDialog({ open: false, meetingId: null });
+
+    if (!meetingId) return;
 
     try {
       setError(null);
@@ -177,10 +216,15 @@ function MeetingHistory() {
     }
   };
 
-  const handleRegenerateInsights = async (meetingId: number) => {
-    if (!confirm("Are you sure you want to regenerate the insights? This will delete the existing insights.")) {
-      return;
-    }
+  const openRegenerateInsightsDialog = (meetingId: number) => {
+    setRegenerateInsightsDialog({ open: true, meetingId });
+  };
+
+  const handleRegenerateInsights = async () => {
+    const meetingId = regenerateInsightsDialog.meetingId;
+    setRegenerateInsightsDialog({ open: false, meetingId: null });
+
+    if (!meetingId) return;
 
     try {
       setError(null);
@@ -269,10 +313,15 @@ function MeetingHistory() {
     }
   };
 
-  const handleDeleteMeeting = async (meetingId: number) => {
-    if (!confirm("Are you sure you want to delete this meeting?")) {
-      return;
-    }
+  const openDeleteMeetingDialog = (meetingId: number) => {
+    setDeleteMeetingDialog({ open: true, meetingId });
+  };
+
+  const handleDeleteMeeting = async () => {
+    const meetingId = deleteMeetingDialog.meetingId;
+    setDeleteMeetingDialog({ open: false, meetingId: null });
+
+    if (!meetingId) return;
 
     try {
       await invoke("delete_meeting", { meetingId });
@@ -334,12 +383,15 @@ function MeetingHistory() {
     }
   };
 
-  const handleUnlinkSpeaker = async (speakerLabel: string) => {
-    if (!selectedMeeting) {
-      return;
-    }
+  const openUnlinkSpeakerDialog = (speakerLabel: string) => {
+    setUnlinkSpeakerDialog({ open: true, speakerLabel });
+  };
 
-    if (!confirm(`Unlink ${speakerLabel} from participant?`)) {
+  const handleUnlinkSpeaker = async () => {
+    const speakerLabel = unlinkSpeakerDialog.speakerLabel;
+    setUnlinkSpeakerDialog({ open: false, speakerLabel: null });
+
+    if (!selectedMeeting || !speakerLabel) {
       return;
     }
 
@@ -561,7 +613,7 @@ function MeetingHistory() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleDeleteMeeting(meeting.id);
+                        openDeleteMeetingDialog(meeting.id);
                       }}
                       style={{
                         padding: "8px 16px",
@@ -678,7 +730,7 @@ function MeetingHistory() {
                     👥 Manage Speakers
                   </button>
                   <button
-                    onClick={() => handleRegenerateTranscripts(selectedMeeting.id)}
+                    onClick={() => openRegenerateTranscriptDialog(selectedMeeting.id)}
                     disabled={transcribingMeetingId === selectedMeeting.id}
                     style={{
                       padding: "6px 12px",
@@ -829,7 +881,7 @@ function MeetingHistory() {
                 <div style={{ display: "flex", gap: "8px" }}>
                   {insights[selectedMeeting.id]?.length > 0 && (
                     <button
-                      onClick={() => handleRegenerateInsights(selectedMeeting.id)}
+                      onClick={() => openRegenerateInsightsDialog(selectedMeeting.id)}
                       disabled={generatingInsights === selectedMeeting.id}
                       style={{
                         padding: "6px 12px",
@@ -1081,7 +1133,7 @@ function MeetingHistory() {
                       </div>
                       {speaker.participant ? (
                         <button
-                          onClick={() => handleUnlinkSpeaker(speaker.speaker_label)}
+                          onClick={() => openUnlinkSpeakerDialog(speaker.speaker_label)}
                           style={{
                             padding: "4px 8px",
                             background: "#dc3545",
@@ -1240,6 +1292,154 @@ function MeetingHistory() {
           </div>
         </div>
       )}
+
+      {/* Regenerate Transcript Confirmation Dialog */}
+      <DialogRoot
+        open={regenerateTranscriptDialog.open}
+        onOpenChange={(e) => e.open ? null : setRegenerateTranscriptDialog({ open: false, meetingId: null })}
+      >
+        <DialogBackdrop />
+        <DialogContent
+          maxW="md"
+          mx="auto"
+          my="auto"
+          position="fixed"
+          top="50%"
+          left="50%"
+          transform="translate(-50%, -50%)"
+        >
+          <DialogHeader p={4}>
+            <DialogTitle>Regenerate Transcript</DialogTitle>
+            <DialogCloseTrigger onClick={() => setRegenerateTranscriptDialog({ open: false, meetingId: null })} />
+          </DialogHeader>
+          <DialogBody p={4} pt={0}>
+            <Text>
+              Are you sure you want to regenerate the transcript? This will delete the existing transcript and speaker mappings.
+            </Text>
+          </DialogBody>
+          <DialogFooter p={4} pt={0}>
+            <HStack gap={3}>
+              <Button variant="outline" onClick={() => setRegenerateTranscriptDialog({ open: false, meetingId: null })} px={4} py={2}>
+                Cancel
+              </Button>
+              <Button colorScheme="red" onClick={handleRegenerateTranscripts} px={4} py={2}>
+                Regenerate
+              </Button>
+            </HStack>
+          </DialogFooter>
+        </DialogContent>
+      </DialogRoot>
+
+      {/* Regenerate Insights Confirmation Dialog */}
+      <DialogRoot
+        open={regenerateInsightsDialog.open}
+        onOpenChange={(e) => e.open ? null : setRegenerateInsightsDialog({ open: false, meetingId: null })}
+      >
+        <DialogBackdrop />
+        <DialogContent
+          maxW="md"
+          mx="auto"
+          my="auto"
+          position="fixed"
+          top="50%"
+          left="50%"
+          transform="translate(-50%, -50%)"
+        >
+          <DialogHeader p={4}>
+            <DialogTitle>Regenerate Insights</DialogTitle>
+            <DialogCloseTrigger onClick={() => setRegenerateInsightsDialog({ open: false, meetingId: null })} />
+          </DialogHeader>
+          <DialogBody p={4} pt={0}>
+            <Text>
+              Are you sure you want to regenerate the insights? This will delete the existing insights.
+            </Text>
+          </DialogBody>
+          <DialogFooter p={4} pt={0}>
+            <HStack gap={3}>
+              <Button variant="outline" onClick={() => setRegenerateInsightsDialog({ open: false, meetingId: null })} px={4} py={2}>
+                Cancel
+              </Button>
+              <Button colorScheme="red" onClick={handleRegenerateInsights} px={4} py={2}>
+                Regenerate
+              </Button>
+            </HStack>
+          </DialogFooter>
+        </DialogContent>
+      </DialogRoot>
+
+      {/* Delete Meeting Confirmation Dialog */}
+      <DialogRoot
+        open={deleteMeetingDialog.open}
+        onOpenChange={(e) => e.open ? null : setDeleteMeetingDialog({ open: false, meetingId: null })}
+      >
+        <DialogBackdrop />
+        <DialogContent
+          maxW="md"
+          mx="auto"
+          my="auto"
+          position="fixed"
+          top="50%"
+          left="50%"
+          transform="translate(-50%, -50%)"
+        >
+          <DialogHeader p={4}>
+            <DialogTitle>Delete Meeting</DialogTitle>
+            <DialogCloseTrigger onClick={() => setDeleteMeetingDialog({ open: false, meetingId: null })} />
+          </DialogHeader>
+          <DialogBody p={4} pt={0}>
+            <Text>
+              Are you sure you want to delete this meeting? This action cannot be undone.
+            </Text>
+          </DialogBody>
+          <DialogFooter p={4} pt={0}>
+            <HStack gap={3}>
+              <Button variant="outline" onClick={() => setDeleteMeetingDialog({ open: false, meetingId: null })} px={4} py={2}>
+                Cancel
+              </Button>
+              <Button colorScheme="red" onClick={handleDeleteMeeting} px={4} py={2}>
+                Delete
+              </Button>
+            </HStack>
+          </DialogFooter>
+        </DialogContent>
+      </DialogRoot>
+
+      {/* Unlink Speaker Confirmation Dialog */}
+      <DialogRoot
+        open={unlinkSpeakerDialog.open}
+        onOpenChange={(e) => e.open ? null : setUnlinkSpeakerDialog({ open: false, speakerLabel: null })}
+      >
+        <DialogBackdrop />
+        <DialogContent
+          maxW="md"
+          mx="auto"
+          my="auto"
+          position="fixed"
+          top="50%"
+          left="50%"
+          transform="translate(-50%, -50%)"
+        >
+          <DialogHeader p={4}>
+            <DialogTitle>Unlink Speaker</DialogTitle>
+            <DialogCloseTrigger onClick={() => setUnlinkSpeakerDialog({ open: false, speakerLabel: null })} />
+          </DialogHeader>
+          <DialogBody p={4} pt={0}>
+            <Text>
+              Unlink <strong>{unlinkSpeakerDialog.speakerLabel}</strong> from participant?
+            </Text>
+          </DialogBody>
+          <DialogFooter p={4} pt={0}>
+            <HStack gap={3}>
+              <Button variant="outline" onClick={() => setUnlinkSpeakerDialog({ open: false, speakerLabel: null })} px={4} py={2}>
+                Cancel
+              </Button>
+              <Button colorScheme="red" onClick={handleUnlinkSpeaker} px={4} py={2}>
+                Unlink
+              </Button>
+            </HStack>
+          </DialogFooter>
+        </DialogContent>
+      </DialogRoot>
     </div>
   );
 }
