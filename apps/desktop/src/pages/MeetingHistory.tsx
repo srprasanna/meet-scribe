@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { MarkdownContent } from "../components/MarkdownContent";
 import {
   startTranscription,
   getTranscriptionStatus,
@@ -995,11 +996,9 @@ function MeetingHistory() {
                               key={insight.id}
                               style={{
                                 fontSize: "14px",
-                                lineHeight: "1.6",
-                                whiteSpace: "pre-wrap",
                               }}
                             >
-                              {insight.content}
+                              <MarkdownContent content={insight.content} />
                             </div>
                           ))}
                         </div>
