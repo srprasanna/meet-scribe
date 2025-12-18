@@ -132,10 +132,15 @@ pub async fn start_transcription(
 
         match state.storage.get_active_service_config("asr").await {
             Ok(Some(service_config)) => {
-                println!(">>> Found active ASR service config: provider={}, settings={:?}",
-                    service_config.provider, service_config.settings);
-                log::info!("Found active ASR service config: provider={}, settings={:?}",
-                    service_config.provider, service_config.settings);
+                println!(
+                    ">>> Found active ASR service config: provider={}, settings={:?}",
+                    service_config.provider, service_config.settings
+                );
+                log::info!(
+                    "Found active ASR service config: provider={}, settings={:?}",
+                    service_config.provider,
+                    service_config.settings
+                );
 
                 if let Some(settings_str) = service_config.settings {
                     match serde_json::from_str::<serde_json::Value>(&settings_str) {
@@ -367,7 +372,6 @@ pub async fn fetch_asr_models(
     provider: String,
     _state: State<'_, TranscriptionState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-
     log::info!("Fetching ASR models for provider: {}", provider);
 
     match provider.as_str() {

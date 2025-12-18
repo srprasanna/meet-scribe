@@ -93,7 +93,11 @@ pub async fn get_speaker_summary(
     // Sort by speaker label for consistent ordering
     summaries.sort_by(|a, b| a.speaker_label.cmp(&b.speaker_label));
 
-    log::info!("Found {} unique speakers for meeting {}", summaries.len(), meeting_id);
+    log::info!(
+        "Found {} unique speakers for meeting {}",
+        summaries.len(),
+        meeting_id
+    );
     Ok(summaries)
 }
 

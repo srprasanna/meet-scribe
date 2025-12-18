@@ -89,7 +89,9 @@ impl StreamingTranscriptionCallback for TauriStreamingCallback {
         log::debug!("Received interim transcript: {} chars", segment.text.len());
 
         // Emit interim transcripts to frontend (not stored in DB)
-        let _ = self.app_handle.emit_to("main", "streaming-transcript-interim", segment);
+        let _ = self
+            .app_handle
+            .emit_to("main", "streaming-transcript-interim", segment);
     }
 
     async fn on_error(&self, error: String) {
@@ -103,7 +105,9 @@ impl StreamingTranscriptionCallback for TauriStreamingCallback {
     async fn on_close(&self) {
         log::info!("Streaming transcription closed");
 
-        let _ = self.app_handle.emit_to("main", "streaming-transcription-closed", ());
+        let _ = self
+            .app_handle
+            .emit_to("main", "streaming-transcription-closed", ());
     }
 }
 
@@ -190,10 +194,7 @@ pub async fn start_streaming_transcription(
     *active_session = Some(session);
     *streaming_state.meeting_id.lock().await = Some(meeting_id);
 
-    log::info!(
-        "Streaming transcription started for meeting {}",
-        meeting_id
-    );
+    log::info!("Streaming transcription started for meeting {}", meeting_id);
 
     Ok(())
 }

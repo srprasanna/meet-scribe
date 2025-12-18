@@ -316,7 +316,8 @@ impl TranscriptionServicePort for AssemblyAIService {
         // AssemblyAI supports streaming via WebSocket at wss://api.assemblyai.com/v2/realtime/ws
         // For now, return an error indicating streaming is not yet implemented
         Err(AppError::Transcription(
-            "AssemblyAI streaming not yet implemented. Use Deepgram for streaming transcription.".to_string()
+            "AssemblyAI streaming not yet implemented. Use Deepgram for streaming transcription."
+                .to_string(),
         ))
     }
 

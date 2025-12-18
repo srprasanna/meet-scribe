@@ -283,7 +283,6 @@ impl DeepgramService {
             confidence,
         })
     }
-
 }
 
 #[async_trait]
@@ -395,12 +394,7 @@ impl TranscriptionServicePort for DeepgramService {
         // Import the streaming module
         use super::deepgram_streaming::DeepgramStreamingSession;
 
-        let session = DeepgramStreamingSession::new(
-            self.api_key.clone(),
-            config,
-            callback,
-        )
-        .await?;
+        let session = DeepgramStreamingSession::new(self.api_key.clone(), config, callback).await?;
 
         Ok(Box::new(session))
     }

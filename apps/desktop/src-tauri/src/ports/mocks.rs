@@ -101,6 +101,11 @@ impl StoragePort for MockStorage {
         Ok(())
     }
 
+    async fn delete_participant(&self, id: i64) -> Result<()> {
+        self.participants.lock().unwrap().remove(&id);
+        Ok(())
+    }
+
     async fn create_transcript(&self, transcript: &Transcript) -> Result<i64> {
         let id = self.next_id();
         let mut t = transcript.clone();
@@ -134,6 +139,16 @@ impl StoragePort for MockStorage {
             .lock()
             .unwrap()
             .retain(|t| t.meeting_id != meeting_id);
+        Ok(())
+    }
+
+    async fn update_transcript(&self, transcript: &Transcript) -> Result<()> {
+        if let Some(id) = transcript.id {
+            let mut transcripts = self.transcripts.lock().unwrap();
+            if let Some(existing) = transcripts.iter_mut().find(|t| t.id == Some(id)) {
+                *existing = transcript.clone();
+            }
+        }
         Ok(())
     }
 

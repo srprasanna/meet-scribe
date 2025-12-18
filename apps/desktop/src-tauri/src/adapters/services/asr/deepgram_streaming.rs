@@ -19,10 +19,18 @@ const DEEPGRAM_STREAMING_URL: &str = "wss://api.deepgram.com/v1/listen";
 /// Deepgram streaming session
 pub struct DeepgramStreamingSession {
     /// WebSocket write sink
-    ws_sender: Arc<Mutex<Option<futures_util::stream::SplitSink<
-        tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
-        Message,
-    >>>>,
+    ws_sender: Arc<
+        Mutex<
+            Option<
+                futures_util::stream::SplitSink<
+                    tokio_tungstenite::WebSocketStream<
+                        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+                    >,
+                    Message,
+                >,
+            >,
+        >,
+    >,
 
     /// Session active status
     is_active: Arc<Mutex<bool>>,
@@ -110,8 +118,12 @@ impl DeepgramStreamingSession {
                                         if !alternative.transcript.is_empty() {
                                             let segment = TranscriptionSegment {
                                                 text: alternative.transcript.clone(),
-                                                start_ms: (response.start.unwrap_or(0.0) * 1000.0) as i64,
-                                                end_ms: ((response.start.unwrap_or(0.0) + response.duration.unwrap_or(0.0)) * 1000.0) as i64,
+                                                start_ms: (response.start.unwrap_or(0.0) * 1000.0)
+                                                    as i64,
+                                                end_ms: ((response.start.unwrap_or(0.0)
+                                                    + response.duration.unwrap_or(0.0))
+                                                    * 1000.0)
+                                                    as i64,
                                                 speaker_label: None, // Will be populated from utterances if available
                                                 confidence: Some(alternative.confidence),
                                             };
@@ -130,7 +142,10 @@ impl DeepgramStreamingSession {
                                                     text: utterance.transcript.clone(),
                                                     start_ms: (utterance.start * 1000.0) as i64,
                                                     end_ms: (utterance.end * 1000.0) as i64,
-                                                    speaker_label: Some(format!("Speaker {}", utterance.speaker)),
+                                                    speaker_label: Some(format!(
+                                                        "Speaker {}",
+                                                        utterance.speaker
+                                                    )),
                                                     confidence: Some(utterance.confidence),
                                                 };
 
@@ -181,7 +196,9 @@ impl StreamingSession for DeepgramStreamingSession {
                 .map_err(|e| AppError::Transcription(format!("Failed to send audio: {}", e)))?;
             Ok(())
         } else {
-            Err(AppError::Transcription("WebSocket connection is closed".to_string()))
+            Err(AppError::Transcription(
+                "WebSocket connection is closed".to_string(),
+            ))
         }
     }
 
@@ -215,7 +232,10 @@ impl StreamingSession for DeepgramStreamingSession {
     fn is_active(&self) -> bool {
         // We need to use try_lock here since this is a sync method
         // In a real-world scenario, you might want to use a different pattern
-        self.is_active.try_lock().map(|guard| *guard).unwrap_or(false)
+        self.is_active
+            .try_lock()
+            .map(|guard| *guard)
+            .unwrap_or(false)
     }
 }
 
