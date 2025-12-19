@@ -155,31 +155,24 @@ pub async fn link_speaker_to_participant(
             .map_err(|e| format!("Failed to create participant: {}", e))?
     };
 
-    // Update all transcripts with this speaker_label to link to the participant
-    let transcripts = state
+    // Batch update all transcripts with this speaker_label to link to the participant
+    // This is much more efficient than updating one by one, especially for large meetings
+    let updated_count = state
         .storage
-        .get_transcripts(request.meeting_id)
+        .update_transcripts_by_speaker_label(
+            request.meeting_id,
+            &request.speaker_label,
+            participant_id,
+        )
         .await
-        .map_err(|e| format!("Failed to get transcripts: {}", e))?;
-
-    let mut updated_count = 0;
-    for mut transcript in transcripts {
-        if transcript.speaker_label.as_ref() == Some(&request.speaker_label) {
-            transcript.participant_id = Some(participant_id);
-            state
-                .storage
-                .update_transcript(&transcript)
-                .await
-                .map_err(|e| format!("Failed to update transcript: {}", e))?;
-            updated_count += 1;
-        }
-    }
+        .map_err(|e| format!("Failed to update transcripts: {}", e))?;
 
     log::info!(
-        "Successfully linked {} transcripts to participant {} (ID: {})",
+        "Successfully linked {} transcripts to participant {} (ID: {}) for meeting {}",
         updated_count,
         request.participant_name,
-        participant_id
+        participant_id,
+        request.meeting_id
     );
 
     Ok(participant_id)

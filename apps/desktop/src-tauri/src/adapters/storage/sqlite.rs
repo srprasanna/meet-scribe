@@ -328,6 +328,23 @@ impl StoragePort for SqliteStorage {
         Ok(())
     }
 
+    /// Batch update transcripts by speaker label
+    /// This is more efficient than updating one by one for participant linking
+    async fn update_transcripts_by_speaker_label(
+        &self,
+        meeting_id: i64,
+        speaker_label: &str,
+        participant_id: i64,
+    ) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        let updated = conn.execute(
+            "UPDATE transcripts SET participant_id = ?1
+             WHERE meeting_id = ?2 AND speaker_label = ?3",
+            params![participant_id, meeting_id, speaker_label],
+        )?;
+        Ok(updated)
+    }
+
     async fn create_insight(&self, insight: &Insight) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
