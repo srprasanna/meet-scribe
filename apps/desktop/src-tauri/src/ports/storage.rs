@@ -35,6 +35,9 @@ pub trait StoragePort: Send + Sync {
     /// Update a participant
     async fn update_participant(&self, participant: &Participant) -> Result<()>;
 
+    /// Delete a participant by ID
+    async fn delete_participant(&self, id: i64) -> Result<()>;
+
     // Transcript operations
     /// Create a new transcript segment
     async fn create_transcript(&self, transcript: &Transcript) -> Result<i64>;
@@ -44,6 +47,17 @@ pub trait StoragePort: Send + Sync {
 
     /// Batch insert transcripts (more efficient for large meetings)
     async fn create_transcripts_batch(&self, transcripts: &[Transcript]) -> Result<Vec<i64>>;
+
+    /// Update a transcript
+    async fn update_transcript(&self, transcript: &Transcript) -> Result<()>;
+
+    /// Batch update transcripts by speaker label (more efficient for participant linking)
+    async fn update_transcripts_by_speaker_label(
+        &self,
+        meeting_id: i64,
+        speaker_label: &str,
+        participant_id: i64,
+    ) -> Result<usize>;
 
     /// Delete all transcripts for a meeting
     async fn delete_transcripts(&self, meeting_id: i64) -> Result<()>;

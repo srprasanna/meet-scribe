@@ -101,6 +101,11 @@ impl StoragePort for MockStorage {
         Ok(())
     }
 
+    async fn delete_participant(&self, id: i64) -> Result<()> {
+        self.participants.lock().unwrap().remove(&id);
+        Ok(())
+    }
+
     async fn create_transcript(&self, transcript: &Transcript) -> Result<i64> {
         let id = self.next_id();
         let mut t = transcript.clone();
@@ -135,6 +140,35 @@ impl StoragePort for MockStorage {
             .unwrap()
             .retain(|t| t.meeting_id != meeting_id);
         Ok(())
+    }
+
+    async fn update_transcript(&self, transcript: &Transcript) -> Result<()> {
+        if let Some(id) = transcript.id {
+            let mut transcripts = self.transcripts.lock().unwrap();
+            if let Some(existing) = transcripts.iter_mut().find(|t| t.id == Some(id)) {
+                *existing = transcript.clone();
+            }
+        }
+        Ok(())
+    }
+
+    async fn update_transcripts_by_speaker_label(
+        &self,
+        meeting_id: i64,
+        speaker_label: &str,
+        participant_id: i64,
+    ) -> Result<usize> {
+        let mut transcripts = self.transcripts.lock().unwrap();
+        let mut count = 0;
+        for transcript in transcripts.iter_mut() {
+            if transcript.meeting_id == meeting_id
+                && transcript.speaker_label.as_deref() == Some(speaker_label)
+            {
+                transcript.participant_id = Some(participant_id);
+                count += 1;
+            }
+        }
+        Ok(count)
     }
 
     async fn create_insight(&self, insight: &Insight) -> Result<i64> {

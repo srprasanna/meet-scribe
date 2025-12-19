@@ -50,6 +50,9 @@ pub struct TranscriptionConfig {
     /// Language code (e.g., "en", "es", "fr")
     pub language: Option<String>,
 
+    /// Model to use for transcription (provider-specific)
+    pub model: Option<String>,
+
     /// Provider-specific settings as JSON
     pub additional_settings: Option<serde_json::Value>,
 }
@@ -60,22 +63,40 @@ impl Default for TranscriptionConfig {
             enable_diarization: true,
             num_speakers: None,
             language: Some("en".to_string()),
+            model: None,
             additional_settings: None,
         }
     }
 }
 
+/// Callback trait for streaming transcription events
+#[async_trait]
+pub trait StreamingTranscriptionCallback: Send + Sync {
+    /// Called when a new transcript segment is received
+    async fn on_transcript(&self, segment: TranscriptionSegment);
+
+    /// Called when an interim (partial) transcript is received
+    /// Interim transcripts are not final and may change
+    async fn on_interim_transcript(&self, segment: TranscriptionSegment);
+
+    /// Called when the stream encounters an error
+    async fn on_error(&self, error: String);
+
+    /// Called when the stream is closed
+    async fn on_close(&self);
+}
+
 /// Port trait for transcription services (ASR)
 #[async_trait]
 pub trait TranscriptionServicePort: Send + Sync {
-    /// Transcribe audio from a file path
+    /// Transcribe audio from a file path (batch mode)
     async fn transcribe_file(
         &self,
         audio_path: &str,
         config: &TranscriptionConfig,
     ) -> Result<TranscriptionResult>;
 
-    /// Transcribe audio from raw bytes
+    /// Transcribe audio from raw bytes (batch mode)
     async fn transcribe_bytes(
         &self,
         audio_data: &[u8],
@@ -83,9 +104,39 @@ pub trait TranscriptionServicePort: Send + Sync {
         config: &TranscriptionConfig,
     ) -> Result<TranscriptionResult>;
 
+    /// Start a streaming transcription session (real-time mode)
+    /// Returns a session handle that can be used to send audio chunks
+    async fn start_streaming(
+        &self,
+        config: &TranscriptionConfig,
+        callback: Box<dyn StreamingTranscriptionCallback>,
+    ) -> Result<Box<dyn StreamingSession>>;
+
     /// Get the provider name
     fn provider_name(&self) -> &str;
 
     /// Check if the service is configured (has API key)
     fn is_configured(&self) -> bool;
+
+    /// Check if streaming is supported by this provider
+    fn supports_streaming(&self) -> bool {
+        false // Default: not supported (backward compatibility)
+    }
+}
+
+/// Handle for an active streaming transcription session
+#[async_trait]
+pub trait StreamingSession: Send + Sync {
+    /// Send an audio chunk to the streaming session
+    /// Audio should be raw PCM data matching the session's format
+    async fn send_audio(&mut self, audio_chunk: &[u8]) -> Result<()>;
+
+    /// Flush any buffered audio and finalize remaining transcripts
+    async fn flush(&mut self) -> Result<()>;
+
+    /// Close the streaming session
+    async fn close(&mut self) -> Result<()>;
+
+    /// Check if the session is still active
+    fn is_active(&self) -> bool;
 }

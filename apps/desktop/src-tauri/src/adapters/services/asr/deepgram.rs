@@ -5,7 +5,8 @@
 
 use crate::error::{AppError, Result};
 use crate::ports::transcription::{
-    TranscriptionConfig, TranscriptionResult, TranscriptionSegment, TranscriptionServicePort,
+    StreamingSession, StreamingTranscriptionCallback, TranscriptionConfig, TranscriptionResult,
+    TranscriptionSegment, TranscriptionServicePort,
 };
 use async_trait::async_trait;
 use reqwest::Client;
@@ -78,8 +79,12 @@ impl DeepgramService {
 
         // Build query parameters
         let mut url = format!("{}/listen", DEEPGRAM_API_BASE);
+
+        // Use model from config, or default to nova-2-meeting
+        let model = config.model.as_deref().unwrap_or("nova-2-meeting");
+
         let mut params = vec![
-            ("model", "nova-2-meeting"), // Use Nova-2-meeting optimized for meetings
+            ("model", model),
             ("punctuate", "true"),
             (
                 "diarize",
@@ -314,8 +319,12 @@ impl TranscriptionServicePort for DeepgramService {
 
         // Build query parameters
         let mut url = format!("{}/listen", DEEPGRAM_API_BASE);
+
+        // Use model from config, or default to nova-2-meeting
+        let model = config.model.as_deref().unwrap_or("nova-2-meeting");
+
         let mut params = vec![
-            ("model", "nova-2-meeting"), // Use Nova-2-meeting optimized for meetings
+            ("model", model),
             ("punctuate", "true"),
             (
                 "diarize",
@@ -375,12 +384,31 @@ impl TranscriptionServicePort for DeepgramService {
         self.parse_deepgram_response(deepgram_response)
     }
 
+    async fn start_streaming(
+        &self,
+        config: &TranscriptionConfig,
+        callback: Box<dyn StreamingTranscriptionCallback>,
+    ) -> Result<Box<dyn StreamingSession>> {
+        log::info!("Starting Deepgram streaming session");
+
+        // Import the streaming module
+        use super::deepgram_streaming::DeepgramStreamingSession;
+
+        let session = DeepgramStreamingSession::new(self.api_key.clone(), config, callback).await?;
+
+        Ok(Box::new(session))
+    }
+
     fn provider_name(&self) -> &str {
         "Deepgram"
     }
 
     fn is_configured(&self) -> bool {
         !self.api_key.is_empty()
+    }
+
+    fn supports_streaming(&self) -> bool {
+        true // Deepgram supports streaming
     }
 }
 

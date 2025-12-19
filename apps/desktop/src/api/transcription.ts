@@ -17,14 +17,11 @@ export async function startTranscription(
   config?: TranscriptionConfig
 ): Promise<void> {
   console.log(">>> FRONTEND: Calling start_transcription for meeting", meetingId);
-  console.log(">>> FRONTEND: Config:", config || { enable_diarization: true, language: "en" });
+  console.log(">>> FRONTEND: Config:", config || "undefined (will load from service config)");
 
   await invoke("start_transcription", {
     meetingId,
-    config: config || {
-      enable_diarization: true,
-      language: "en",
-    },
+    config: config, // Pass undefined to let backend load from service config
   });
 
   console.log(">>> FRONTEND: start_transcription returned successfully");
