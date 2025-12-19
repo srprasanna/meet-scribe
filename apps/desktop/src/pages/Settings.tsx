@@ -24,6 +24,8 @@ import {
   DialogBackdrop,
   DialogCloseTrigger,
 } from "@chakra-ui/react";
+import { Switch } from "@chakra-ui/react";
+import { Select, createListCollection } from "@chakra-ui/react";
 
 const toaster = createToaster({
   placement: "top-end",
@@ -479,16 +481,21 @@ function Settings() {
                 </Badge>
               )}
               {hasKey && savedModel && (
-                <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
-                  <input
-                    type="checkbox"
+                <HStack gap={2}>
+                  <Switch.Root
                     checked={isActive}
-                    onChange={(e) => handleToggleService(serviceType, provider, e.target.checked)}
+                    onCheckedChange={(details: { checked: boolean }) => handleToggleService(serviceType, provider, details.checked)}
                     disabled={loading[`activate_${serviceType}_${provider}`] || loading[`deactivate_${serviceType}_${provider}`]}
-                    style={{ width: "20px", height: "20px", cursor: "pointer" }}
-                  />
+                    colorPalette="blue"
+                    size="md"
+                  >
+                    <Switch.HiddenInput />
+                    <Switch.Control>
+                      <Switch.Thumb />
+                    </Switch.Control>
+                  </Switch.Root>
                   <Text fontSize="sm">Active</Text>
-                </label>
+                </HStack>
               )}
             </HStack>
           </HStack>
@@ -557,56 +564,65 @@ function Settings() {
                 )}
               </Text>
               <VStack align="stretch" gap={2}>
-                <select
-                  style={{
-                    width: "100%",
-                    padding: "8px 12px",
-                    borderRadius: "6px",
-                    border: "1px solid #E2E8F0",
-                    fontSize: "14px",
-                  }}
-                  value={selectedModel}
-                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
-                    const model = e.target.value;
-                    if (serviceType === "asr") {
-                      setAsrModels((prev) => ({ ...prev, [provider]: model }));
-                      setAsrModelChanged((prev) => ({ ...prev, [provider]: model !== savedModel }));
-                    } else {
-                      setLlmModels((prev) => ({ ...prev, [provider]: model }));
-                      setLlmModelChanged((prev) => ({ ...prev, [provider]: model !== savedModel }));
-                    }
-                  }}
-                  disabled={modelsLoading[provider]}
-                >
-                  <option value="">Select a model</option>
-                  {serviceType === "asr" && availableModels[provider]?.map((model) => {
-                    const modelId = model.canonical_name || model.id || model.name;
-                    const modelName = model.name || model.id;
-                    const modelVersion = model.version ? ` (${model.version})` : "";
-                    const modelDesc = model.description ? ` - ${model.description}` : "";
-                    const displayName = `${modelName}${modelVersion}${modelDesc}`;
+                {(() => {
+                  // Build collection based on service type
+                  const items = serviceType === "asr"
+                    ? (availableModels[provider] || []).map((model) => {
+                        const modelId = model.canonical_name || model.id || model.name;
+                        const modelName = model.name || model.id;
+                        const modelVersion = model.version ? ` (${model.version})` : "";
+                        const modelDesc = model.description ? ` - ${model.description}` : "";
+                        const displayName = `${modelName}${modelVersion}${modelDesc}`;
+                        return { value: modelId, label: displayName };
+                      })
+                    : (availableModels[provider] || [])
+                        .slice()
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map((model) => ({
+                          value: model.id,
+                          label: `${model.name} (${model.context_window.toLocaleString()} tokens)${model.is_fallback_context_window ? " ⚠️" : ""}`,
+                        }));
 
-                    return (
-                      <option key={modelId} value={modelId}>
-                        {displayName}
-                      </option>
-                    );
-                  })}
-                  {serviceType === "llm" &&
-                    availableModels[provider]
-                      ?.slice()
-                      .sort((a, b) => a.name.localeCompare(b.name))
-                      .map((model) => (
-                        <option
-                          key={model.id}
-                          value={model.id}
-                          title={`Context: ${model.context_window.toLocaleString()} tokens`}
-                        >
-                          {model.name} ({model.context_window.toLocaleString()} tokens)
-                          {model.is_fallback_context_window && " ⚠️"}
-                        </option>
-                      ))}
-                </select>
+                  const collection = createListCollection({ items });
+
+                  return (
+                    <Select.Root
+                      collection={collection}
+                      value={selectedModel ? [selectedModel] : []}
+                      onValueChange={(details: { value: string[] }) => {
+                        const model = details.value[0] || "";
+                        if (serviceType === "asr") {
+                          setAsrModels((prev) => ({ ...prev, [provider]: model }));
+                          setAsrModelChanged((prev) => ({ ...prev, [provider]: model !== savedModel }));
+                        } else {
+                          setLlmModels((prev) => ({ ...prev, [provider]: model }));
+                          setLlmModelChanged((prev) => ({ ...prev, [provider]: model !== savedModel }));
+                        }
+                      }}
+                      disabled={modelsLoading[provider]}
+                      size="md"
+                      positioning={{ sameWidth: true }}
+                    >
+                      <Select.HiddenSelect />
+                      <Select.Control>
+                        <Select.Trigger>
+                          <Select.ValueText placeholder="Select a model" />
+                          <Select.Indicator />
+                        </Select.Trigger>
+                      </Select.Control>
+                      <Select.Positioner>
+                        <Select.Content>
+                          {items.map((item) => (
+                            <Select.Item key={item.value} item={item.value} px={3} py={2}>
+                              <Select.ItemText>{item.label}</Select.ItemText>
+                              <Select.ItemIndicator />
+                            </Select.Item>
+                          ))}
+                        </Select.Content>
+                      </Select.Positioner>
+                    </Select.Root>
+                  );
+                })()}
 
                 {hasModelChanged && selectedModel && (
                   <Button

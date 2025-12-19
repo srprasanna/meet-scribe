@@ -14,7 +14,7 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
       components={{
         // Style for paragraphs
         p: ({ children }) => (
-          <p style={{ margin: '0 0 8px 0', lineHeight: '1.6' }}>{children}</p>
+          <p style={{ margin: '0 0 8px 0', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{children}</p>
         ),
         // Style for lists
         ul: ({ children }) => (
@@ -29,7 +29,7 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
         ),
         // Style for list items
         li: ({ children }) => (
-          <li style={{ marginBottom: '4px' }}>{children}</li>
+          <li style={{ marginBottom: '4px', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{children}</li>
         ),
         // Style for bold text
         strong: ({ children }) => (
