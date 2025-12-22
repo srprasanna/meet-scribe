@@ -91,6 +91,17 @@ export async function listLlmProviders(): Promise<string[]> {
 }
 
 /**
+ * Update an existing insight's content
+ *
+ * @param insightId - The ID of the insight to update
+ * @param content - The new content for the insight
+ * @returns Promise that resolves when insight is updated
+ */
+export async function updateInsight(insightId: number, content: string): Promise<void> {
+  return invoke("update_insight", { insightId, content });
+}
+
+/**
  * Delete all insights for a meeting
  *
  * This allows regenerating insights by first deleting existing ones.

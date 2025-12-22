@@ -69,6 +69,9 @@ pub trait StoragePort: Send + Sync {
     /// Get insights for a meeting
     async fn get_insights(&self, meeting_id: i64) -> Result<Vec<Insight>>;
 
+    /// Update an insight's content
+    async fn update_insight_content(&self, insight_id: i64, content: &str) -> Result<()>;
+
     /// Delete all insights for a meeting
     async fn delete_insights(&self, meeting_id: i64) -> Result<()>;
 

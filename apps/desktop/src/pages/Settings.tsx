@@ -26,6 +26,7 @@ import {
 } from "@chakra-ui/react";
 import { Switch } from "@chakra-ui/react";
 import { Select, createListCollection } from "@chakra-ui/react";
+import { AudioTester } from "../components/AudioTester";
 
 const toaster = createToaster({
   placement: "top-end",
@@ -109,7 +110,7 @@ function Settings() {
 
   // Loading states
   const [loading, setLoading] = useState<Record<string, boolean>>({});
-  const [activeTab, setActiveTab] = useState<"asr" | "llm">("asr");
+  const [activeTab, setActiveTab] = useState<"asr" | "llm" | "audio">("asr");
 
   // Delete confirmation dialog state
   const [deleteDialog, setDeleteDialog] = useState<{
@@ -602,6 +603,7 @@ function Settings() {
                       disabled={modelsLoading[provider]}
                       size="md"
                       positioning={{ sameWidth: true }}
+                      multiple={false}
                     >
                       <Select.HiddenSelect />
                       <Select.Control>
@@ -613,7 +615,7 @@ function Settings() {
                       <Select.Positioner>
                         <Select.Content>
                           {items.map((item) => (
-                            <Select.Item key={item.value} item={item.value} px={3} py={2}>
+                            <Select.Item key={item.value} item={item} px={3} py={2}>
                               <Select.ItemText>{item.label}</Select.ItemText>
                               <Select.ItemIndicator />
                             </Select.Item>
@@ -714,6 +716,16 @@ function Settings() {
             >
               AI Analysis (LLM)
             </Button>
+            <Button
+              variant={activeTab === "audio" ? "solid" : "ghost"}
+              colorScheme={activeTab === "audio" ? "blue" : "gray"}
+              onClick={() => setActiveTab("audio")}
+              borderRadius="md md 0 0"
+              px={4}
+              py={2}
+            >
+              Audio Testing
+            </Button>
           </HStack>
 
           {activeTab === "asr" && (
@@ -748,6 +760,12 @@ function Settings() {
                 renderServiceCard("llm", provider, config)
               )}
             </VStack>
+          )}
+
+          {activeTab === "audio" && (
+            <Box>
+              <AudioTester />
+            </Box>
           )}
         </Box>
 

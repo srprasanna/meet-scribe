@@ -47,6 +47,7 @@ pub struct AudioFormatInfo {
 /// Start a new meeting and begin audio capture
 #[tauri::command]
 pub async fn start_meeting(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     request: StartMeetingRequest,
 ) -> Result<i64, String> {
@@ -85,6 +86,11 @@ pub async fn start_meeting(
             // Store current meeting ID only after successful audio capture
             *state.current_meeting_id.lock().await = Some(meeting_id);
 
+            // Update tray icon to show recording status
+            if let Some(tray) = app.tray_by_id("main") {
+                let _ = tray.set_tooltip(Some("Meet Scribe - Recording..."));
+            }
+
             Ok(meeting_id)
         }
         Err(e) => {
@@ -115,6 +121,7 @@ pub async fn stop_meeting(
     // Stop audio capture and save audio file in background
     let audio_capture_arc = Arc::clone(&state.audio_capture);
     let storage_arc = Arc::clone(&state.storage);
+    let app_clone = app.clone();
 
     tokio::spawn(async move {
         // Get the audio buffer BEFORE releasing the mutex
@@ -137,7 +144,7 @@ pub async fn stop_meeting(
         match buffer_result {
             Ok(Some(buffer)) => {
                 // Get app data directory for secure storage
-                let app_data_dir = match app.path().app_data_dir() {
+                let app_data_dir = match app_clone.path().app_data_dir() {
                     Ok(dir) => dir,
                     Err(e) => {
                         log::error!("Failed to get app data directory: {}", e);
@@ -216,6 +223,11 @@ pub async fn stop_meeting(
         .update_meeting(&meeting)
         .await
         .map_err(|e| e.to_string())?;
+
+    // Update tray icon to show idle status
+    if let Some(tray) = app.tray_by_id("main") {
+        let _ = tray.set_tooltip(Some("Meet Scribe - Idle"));
+    }
 
     log::info!("Meeting {} stopped", meeting_id);
     Ok(())
@@ -400,5 +412,50 @@ pub async fn delete_meeting(
         .map_err(|e| e.to_string())?;
 
     log::info!("Deleted meeting: {}", meeting_id);
+    Ok(())
+}
+
+/// Test speaker capture (loopback)
+///
+/// Starts capturing speaker output for testing purposes.
+/// TODO: Implement actual test capture with audio level monitoring
+#[tauri::command]
+pub async fn test_speaker_capture(
+    state: tauri::State<'_, AppState>,
+    device_index: usize,
+) -> Result<(), String> {
+    log::info!("Testing speaker capture on device index: {}", device_index);
+
+    // TODO: Implement speaker test capture
+    // For now, return a not implemented error with helpful message
+    Err("Speaker testing not yet implemented. This feature requires dual-capture mixing implementation.".to_string())
+}
+
+/// Test microphone capture
+///
+/// Starts capturing microphone input for testing purposes.
+/// TODO: Implement actual test capture with audio level monitoring
+#[tauri::command]
+pub async fn test_microphone_capture(
+    state: tauri::State<'_, AppState>,
+    device_index: usize,
+) -> Result<(), String> {
+    log::info!("Testing microphone capture on device index: {}", device_index);
+
+    // TODO: Implement microphone test capture
+    // For now, return a not implemented error with helpful message
+    Err("Microphone testing not yet implemented. This is the critical missing feature - microphone input is not currently captured during meetings.".to_string())
+}
+
+/// Stop audio testing
+///
+/// Stops any ongoing audio capture test.
+#[tauri::command]
+pub async fn stop_audio_test(
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    log::info!("Stopping audio test");
+
+    // TODO: Implement stop audio test
     Ok(())
 }

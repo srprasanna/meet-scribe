@@ -492,6 +492,26 @@ pub async fn get_meeting_insights(
     })
 }
 
+/// Update an existing insight's content
+///
+/// This allows users to edit and refine AI-generated insights.
+#[tauri::command]
+pub async fn update_insight(
+    insight_id: i64,
+    content: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    use crate::ports::storage::StoragePort;
+
+    log::info!("Updating insight {}", insight_id);
+
+    state
+        .storage
+        .update_insight_content(insight_id, &content)
+        .await
+        .map_err(|e| format!("Failed to update insight: {}", e))
+}
+
 /// Delete all insights for a meeting
 ///
 /// This allows regenerating insights by first deleting existing ones.

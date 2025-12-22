@@ -68,7 +68,7 @@ jobs:
           cd src-tauri
           cargo test --verbose
 
-      - name: Check Rust formatting
+      - name: Check Rust formattin
         run: |
           cd apps/desktop/src-tauri
           cargo fmt -- --check

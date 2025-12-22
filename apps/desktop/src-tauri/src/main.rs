@@ -12,7 +12,11 @@ use adapters::storage::SqliteStorage;
 use error::Result;
 use ports::storage::StoragePort;
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconEvent},
+    Manager, Runtime,
+};
 use tokio::sync::Mutex;
 use utils::keychain::KeychainManager;
 
@@ -97,23 +101,101 @@ async fn check_db_health(state: tauri::State<'_, AppState>) -> std::result::Resu
     }
 }
 
+/// Update the tray icon tooltip with recording status
+#[tauri::command]
+async fn update_tray_status(
+    app: tauri::AppHandle,
+    is_recording: bool,
+) -> std::result::Result<(), String> {
+    if let Some(tray) = app.tray_by_id("main") {
+        let tooltip = if is_recording {
+            "Meet Scribe - Recording..."
+        } else {
+            "Meet Scribe - Idle"
+        };
+        tray.set_tooltip(Some(tooltip))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Setup system tray menu
+fn setup_tray_menu<R: Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<()> {
+    let show_item = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
+    let hide_item = MenuItem::with_id(app, "hide", "Hide Window", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+
+    let menu = Menu::with_items(app, &[&show_item, &hide_item, &quit_item])?;
+
+    let tray = app.tray_by_id("main").expect("Failed to get tray");
+    tray.set_menu(Some(menu))?;
+
+    tray.on_tray_icon_event(|tray, event| {
+        if let TrayIconEvent::Click {
+            button: MouseButton::Left,
+            button_state: MouseButtonState::Up,
+            ..
+        } = event
+        {
+            let app = tray.app_handle();
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }
+    });
+
+    tray.on_menu_event(move |app, event| match event.id().as_ref() {
+        "show" => {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }
+        "hide" => {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.hide();
+            }
+        }
+        "quit" => {
+            app.exit(0);
+        }
+        _ => {}
+    });
+
+    Ok(())
+}
+
 fn main() {
     // Initialize logger
     env_logger::init();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // Initialize app state
             let (app_state, transcription_state, streaming_state) = initialize_app(app.handle())?;
             app.manage(app_state);
             app.manage(transcription_state);
             app.manage(streaming_state);
+
+            // Setup system tray
+            setup_tray_menu(app.handle())?;
+
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Prevent window from closing, hide it instead
+                window.hide().unwrap();
+                api.prevent_close();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_version,
             check_db_health,
+            update_tray_status,
             // Config commands
             commands::config::save_api_key,
             commands::config::get_api_key_status,
@@ -134,6 +216,9 @@ fn main() {
             commands::meeting::get_meeting_history,
             commands::meeting::get_meeting,
             commands::meeting::delete_meeting,
+            commands::meeting::test_speaker_capture,
+            commands::meeting::test_microphone_capture,
+            commands::meeting::stop_audio_test,
             // Transcription commands (batch)
             commands::transcription::start_transcription,
             commands::transcription::get_transcription_status,
@@ -156,6 +241,7 @@ fn main() {
             commands::llm::list_llm_providers,
             commands::llm::generate_meeting_insights,
             commands::llm::get_meeting_insights,
+            commands::llm::update_insight,
             commands::llm::delete_meeting_insights,
             // Participant commands
             commands::participant::get_speaker_summary,

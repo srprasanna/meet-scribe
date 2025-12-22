@@ -6,7 +6,7 @@ use crate::adapters::storage::SqliteStorage;
 use crate::domain::models::Transcript;
 use crate::ports::storage::StoragePort;
 use crate::ports::transcription::TranscriptionConfig;
-use crate::utils::keychain::KeychainManager;
+use crate::utils::keychain::{KeychainManager, KeychainPort};
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex;
@@ -370,118 +370,51 @@ pub async fn delete_transcripts(
 #[tauri::command]
 pub async fn fetch_asr_models(
     provider: String,
-    _state: State<'_, TranscriptionState>,
+    state: State<'_, TranscriptionState>,
 ) -> Result<Vec<serde_json::Value>, String> {
     log::info!("Fetching ASR models for provider: {}", provider);
 
     match provider.as_str() {
         "deepgram" => {
-            // Deepgram models based on official documentation
-            // Source: https://developers.deepgram.com/docs/model
-            Ok(vec![
-                // Flux - Conversational STT for voice agents
-                serde_json::json!({
-                    "id": "flux-general-en",
-                    "name": "Flux",
-                    "description": "Conversational STT built for voice agents with turn-taking detection"
-                }),
-                // Nova-3 - Latest generation
-                serde_json::json!({
-                    "id": "nova-3",
-                    "name": "Nova-3",
-                    "description": "Latest generation model with industry-leading accuracy"
-                }),
-                serde_json::json!({
-                    "id": "nova-3-medical",
-                    "name": "Nova-3 Medical",
-                    "description": "Medical terminology optimized"
-                }),
-                // Nova-2 - Second generation
-                serde_json::json!({
-                    "id": "nova-2",
-                    "name": "Nova-2",
-                    "description": "General purpose model"
-                }),
-                serde_json::json!({
-                    "id": "nova-2-meeting",
-                    "name": "Nova-2 Meeting",
-                    "description": "Optimized for meeting transcription"
-                }),
-                serde_json::json!({
-                    "id": "nova-2-phonecall",
-                    "name": "Nova-2 Phonecall",
-                    "description": "Optimized for phone call audio"
-                }),
-                serde_json::json!({
-                    "id": "nova-2-conversationalai",
-                    "name": "Nova-2 Conversational AI",
-                    "description": "Optimized for conversational AI applications"
-                }),
-                serde_json::json!({
-                    "id": "nova-2-voicemail",
-                    "name": "Nova-2 Voicemail",
-                    "description": "Optimized for voicemail transcription"
-                }),
-                serde_json::json!({
-                    "id": "nova-2-finance",
-                    "name": "Nova-2 Finance",
-                    "description": "Financial terminology optimized"
-                }),
-                serde_json::json!({
-                    "id": "nova-2-video",
-                    "name": "Nova-2 Video",
-                    "description": "Optimized for video content"
-                }),
-                serde_json::json!({
-                    "id": "nova-2-medical",
-                    "name": "Nova-2 Medical",
-                    "description": "Medical terminology optimized"
-                }),
-                // Nova - First generation
-                serde_json::json!({
-                    "id": "nova",
-                    "name": "Nova",
-                    "description": "First generation Nova model"
-                }),
-                // Enhanced - Premium accuracy
-                serde_json::json!({
-                    "id": "enhanced",
-                    "name": "Enhanced",
-                    "description": "Premium accuracy model"
-                }),
-                serde_json::json!({
-                    "id": "enhanced-meeting",
-                    "name": "Enhanced Meeting",
-                    "description": "Enhanced model for meetings"
-                }),
-                serde_json::json!({
-                    "id": "enhanced-phonecall",
-                    "name": "Enhanced Phonecall",
-                    "description": "Enhanced model for phone calls"
-                }),
-                // Base - Cost-effective
-                serde_json::json!({
-                    "id": "base",
-                    "name": "Base",
-                    "description": "Cost-effective model"
-                }),
-                // Whisper models (OpenAI via Deepgram)
-                serde_json::json!({
-                    "id": "whisper-large",
-                    "name": "Whisper Large",
-                    "description": "OpenAI Whisper large model"
-                }),
-                serde_json::json!({
-                    "id": "whisper-medium",
-                    "name": "Whisper Medium",
-                    "description": "OpenAI Whisper medium model"
-                }),
-                serde_json::json!({
-                    "id": "whisper-small",
-                    "name": "Whisper Small",
-                    "description": "OpenAI Whisper small model"
-                }),
-            ])
+            // Fetch models from Deepgram API
+            let api_key = state
+                .keychain
+                .get_api_key("asr", &provider)
+                .map_err(|e| format!("Failed to get API key: {}", e))?;
+
+            if api_key.is_empty() {
+                return Err("Deepgram API key not configured".to_string());
+            }
+
+            let service = crate::adapters::services::asr::deepgram::DeepgramService::new(api_key);
+            let models = service
+                .list_models()
+                .await
+                .map_err(|e| format!("Failed to fetch Deepgram models: {}", e))?;
+
+            // Deduplicate models by canonical_name (keep the first occurrence)
+            let mut seen = std::collections::HashSet::new();
+            let unique_models: Vec<_> = models
+                .into_iter()
+                .filter(|model| seen.insert(model.canonical_name.clone()))
+                .collect();
+
+            // Convert to JSON format expected by frontend
+            Ok(unique_models
+                .iter()
+                .map(|model| {
+                    serde_json::json!({
+                        "id": model.canonical_name,
+                        "name": model.name,
+                        "canonical_name": model.canonical_name,
+                        "version": model.version,
+                        "description": format!("{} ({})", model.architecture, model.version),
+                        "languages": model.languages,
+                        "batch": model.batch,
+                        "streaming": model.streaming,
+                    })
+                })
+                .collect())
         }
         "assemblyai" => {
             // AssemblyAI doesn't have a models API, return static list based on their documentation

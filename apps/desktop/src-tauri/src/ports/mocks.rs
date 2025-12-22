@@ -190,6 +190,14 @@ impl StoragePort for MockStorage {
             .collect())
     }
 
+    async fn update_insight_content(&self, insight_id: i64, content: &str) -> Result<()> {
+        let mut insights = self.insights.lock().unwrap();
+        if let Some(insight) = insights.iter_mut().find(|i| i.id == Some(insight_id)) {
+            insight.content = content.to_string();
+        }
+        Ok(())
+    }
+
     async fn delete_insights(&self, meeting_id: i64) -> Result<()> {
         self.insights
             .lock()

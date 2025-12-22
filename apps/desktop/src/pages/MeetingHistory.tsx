@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { MarkdownContent } from "../components/MarkdownContent";
+import { MarkdownEditor } from "../components/MarkdownEditor";
+import { AudioPlayer } from "../components/AudioPlayer";
 import {
   startTranscription,
   getTranscriptionStatus,
@@ -12,6 +14,7 @@ import {
   generateMeetingInsights,
   getMeetingInsights,
   deleteMeetingInsights,
+  updateInsight,
   type StoredInsight,
 } from "../api/insights";
 import {
@@ -43,6 +46,7 @@ interface Meeting {
   start_time: number;
   end_time?: number;
   participant_count?: number;
+  audio_file_path?: string;
   created_at: number;
 }
 
@@ -75,6 +79,8 @@ function MeetingHistory() {
   const [generatingInsights, setGeneratingInsights] = useState<number | null>(null);
   const [llmConfig, setLlmConfig] = useState<{ provider: string; model: string } | null>(null);
   const [llmAvailable, setLlmAvailable] = useState<boolean>(false);
+  const [editingInsightId, setEditingInsightId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<'transcript' | 'insights'>('transcript');
 
   // Participant mapping state
   const [showSpeakerModal, setShowSpeakerModal] = useState<boolean>(false);
@@ -263,6 +269,30 @@ function MeetingHistory() {
       console.error(err);
     } finally {
       setGeneratingInsights(null);
+    }
+  };
+
+  const handleSaveInsight = async (insightId: number, content: string) => {
+    if (!selectedMeeting) return;
+
+    try {
+      setError(null);
+      await updateInsight(insightId, content);
+
+      // Update local state
+      setInsights((prev) => ({
+        ...prev,
+        [selectedMeeting.id]: prev[selectedMeeting.id].map((insight) =>
+          insight.id === insightId ? { ...insight, content } : insight
+        ),
+      }));
+
+      // Close editor
+      setEditingInsightId(null);
+    } catch (err) {
+      setError(`Failed to save insight: ${err}`);
+      console.error(err);
+      throw err;
     }
   };
 
@@ -640,60 +670,143 @@ function MeetingHistory() {
       {selectedMeeting && (
         <div
           style={{
-            background: "white",
-            padding: "24px",
-            borderRadius: "8px",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-            marginTop: "20px",
+            background: "#f8f9fa",
+            padding: "0",
+            borderRadius: "12px",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.08)",
+            marginTop: "24px",
+            overflow: "hidden",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-            <h2 style={{ margin: 0 }}>Meeting Details</h2>
-            <button
-              onClick={() => setSelectedMeeting(null)}
-              style={{
-                padding: "6px 12px",
-                background: "#f0f0f0",
-                border: "1px solid #ddd",
-                borderRadius: "6px",
-                cursor: "pointer",
-                fontSize: "13px",
-              }}
-            >
-              ✕ Close
-            </button>
-          </div>
-
-          <div style={{ marginBottom: "20px" }}>
-            <h3 style={{ marginTop: 0, marginBottom: "8px" }}>
-              {selectedMeeting.title || "Untitled Meeting"}
-            </h3>
-            <div style={{ fontSize: "14px", color: "#666", lineHeight: "1.8" }}>
-              <div>
-                <strong>Platform:</strong>{" "}
-                {PLATFORMS[selectedMeeting.platform as keyof typeof PLATFORMS]?.label || selectedMeeting.platform}
+          {/* Header with gradient background */}
+          <div
+            style={{
+              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+              padding: "24px",
+              color: "white",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px" }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", opacity: 0.9 }}>
+                  <span style={{ fontSize: "20px" }}>
+                    {PLATFORMS[selectedMeeting.platform as keyof typeof PLATFORMS]?.icon}
+                  </span>
+                  <span style={{ fontSize: "13px", fontWeight: 500 }}>
+                    {PLATFORMS[selectedMeeting.platform as keyof typeof PLATFORMS]?.label}
+                  </span>
+                </div>
+                <h2 style={{ margin: 0, fontSize: "24px", fontWeight: 600 }}>
+                  {selectedMeeting.title || "Untitled Meeting"}
+                </h2>
               </div>
+              <button
+                onClick={() => {
+                  setSelectedMeeting(null);
+                  setActiveTab('transcript');
+                }}
+                style={{
+                  padding: "8px 16px",
+                  background: "rgba(255, 255, 255, 0.2)",
+                  backdropFilter: "blur(10px)",
+                  border: "1px solid rgba(255, 255, 255, 0.3)",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  color: "white",
+                  fontWeight: 500,
+                  transition: "all 0.2s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(255, 255, 255, 0.3)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "rgba(255, 255, 255, 0.2)";
+                }}
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            {/* Meeting metadata */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", fontSize: "13px", opacity: 0.95 }}>
               <div>
-                <strong>Start Time:</strong> {formatDate(selectedMeeting.start_time)}
+                <div style={{ opacity: 0.8, marginBottom: "4px" }}>Start Time</div>
+                <div style={{ fontWeight: 500 }}>{formatDate(selectedMeeting.start_time)}</div>
               </div>
               {selectedMeeting.end_time && (
                 <div>
-                  <strong>End Time:</strong> {formatDate(selectedMeeting.end_time)}
+                  <div style={{ opacity: 0.8, marginBottom: "4px" }}>Duration</div>
+                  <div style={{ fontWeight: 500 }}>{formatDuration(selectedMeeting.start_time, selectedMeeting.end_time)}</div>
                 </div>
               )}
-              <div>
-                <strong>Duration:</strong> {formatDuration(selectedMeeting.start_time, selectedMeeting.end_time)}
-              </div>
               {selectedMeeting.participant_count !== undefined && (
                 <div>
-                  <strong>Participants:</strong> {selectedMeeting.participant_count}
+                  <div style={{ opacity: 0.8, marginBottom: "4px" }}>Participants</div>
+                  <div style={{ fontWeight: 500 }}>{selectedMeeting.participant_count} people</div>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Transcripts Section */}
-          {loadingTranscripts[selectedMeeting.id] ? (
+          {/* Audio Player - only show if audio file exists */}
+          {selectedMeeting.audio_file_path && (
+            <div style={{ padding: "24px", background: "white" }}>
+              <AudioPlayer
+                audioPath={selectedMeeting.audio_file_path}
+                meetingTitle={selectedMeeting.title}
+              />
+            </div>
+          )}
+
+          {/* Tab Navigation */}
+          <div style={{ background: "white", borderBottom: "2px solid #f0f0f0" }}>
+            <div style={{ display: "flex", padding: "0 24px" }}>
+              <button
+                onClick={() => setActiveTab('transcript')}
+                style={{
+                  flex: 1,
+                  padding: "16px 24px",
+                  background: activeTab === 'transcript' ? 'white' : 'transparent',
+                  color: activeTab === 'transcript' ? '#667eea' : '#666',
+                  border: 'none',
+                  borderBottom: activeTab === 'transcript' ? '3px solid #667eea' : '3px solid transparent',
+                  cursor: 'pointer',
+                  fontSize: '15px',
+                  fontWeight: activeTab === 'transcript' ? 600 : 500,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                📝 Transcript
+                {transcripts[selectedMeeting.id]?.length > 0 && ` (${transcripts[selectedMeeting.id].length})`}
+              </button>
+              <button
+                onClick={() => setActiveTab('insights')}
+                style={{
+                  flex: 1,
+                  padding: "16px 24px",
+                  background: activeTab === 'insights' ? 'white' : 'transparent',
+                  color: activeTab === 'insights' ? '#667eea' : '#666',
+                  border: 'none',
+                  borderBottom: activeTab === 'insights' ? '3px solid #667eea' : '3px solid transparent',
+                  cursor: 'pointer',
+                  fontSize: '15px',
+                  fontWeight: activeTab === 'insights' ? 600 : 500,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                🤖 AI Insights
+                {insights[selectedMeeting.id]?.length > 0 && ` (${insights[selectedMeeting.id].length})`}
+              </button>
+            </div>
+          </div>
+
+          {/* Tab Content */}
+          <div style={{ background: "white", padding: "24px", minHeight: "400px" }}>
+            {activeTab === 'transcript' && (
+              <div>
+                {/* Transcripts Section */}
+                {loadingTranscripts[selectedMeeting.id] ? (
             <div
               style={{
                 padding: "24px",
@@ -869,10 +982,14 @@ function MeetingHistory() {
             >
               <p style={{ margin: 0 }}>Meeting is still in progress. Transcription will be available after the meeting ends.</p>
             </div>
-          )}
+                )}
+              </div>
+            )}
 
-          {/* Insights Section - only show if transcripts exist */}
-          {transcripts[selectedMeeting.id]?.length > 0 && (
+            {activeTab === 'insights' && (
+              <div>
+                {/* Insights Section */}
+                {transcripts[selectedMeeting.id]?.length > 0 ? (
             <div style={{ marginTop: "24px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
                 <h3 style={{ margin: 0 }}>
@@ -996,9 +1113,37 @@ function MeetingHistory() {
                               key={insight.id}
                               style={{
                                 fontSize: "14px",
+                                marginBottom: "16px",
                               }}
                             >
-                              <MarkdownContent content={insight.content} />
+                              {editingInsightId === insight.id ? (
+                                <MarkdownEditor
+                                  initialContent={insight.content}
+                                  onSave={(content) => handleSaveInsight(insight.id, content)}
+                                  onCancel={() => setEditingInsightId(null)}
+                                />
+                              ) : (
+                                <div>
+                                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
+                                    <button
+                                      onClick={() => setEditingInsightId(insight.id)}
+                                      style={{
+                                        padding: "4px 8px",
+                                        background: "#0078d4",
+                                        color: "white",
+                                        border: "none",
+                                        borderRadius: "4px",
+                                        cursor: "pointer",
+                                        fontSize: "11px",
+                                      }}
+                                      title="Edit this insight"
+                                    >
+                                      ✏️ Edit
+                                    </button>
+                                  </div>
+                                  <MarkdownContent content={insight.content} />
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -1024,7 +1169,28 @@ function MeetingHistory() {
                 </div>
               )}
             </div>
-          )}
+                ) : (
+              <div
+                style={{
+                  padding: "40px",
+                  background: "#f9f9f9",
+                  borderRadius: "8px",
+                  textAlign: "center",
+                  color: "#666",
+                }}
+              >
+                <div style={{ fontSize: "48px", marginBottom: "16px", opacity: 0.5 }}>📝</div>
+                <p style={{ margin: 0, fontSize: "15px", fontWeight: 500 }}>
+                  No transcript available yet
+                </p>
+                <p style={{ margin: "8px 0 0 0", fontSize: "13px" }}>
+                  Generate a transcript first to enable AI insights
+                </p>
+              </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
