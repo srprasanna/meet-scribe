@@ -49,6 +49,7 @@ export function AudioTester() {
 
   const [isSpeakerTesting, setIsSpeakerTesting] = useState(false);
   const [isMicrophoneTesting, setIsMicrophoneTesting] = useState(false);
+  const [isPlayingTestTone, setIsPlayingTestTone] = useState(false);
 
   const [speakerLevel, setSpeakerLevel] = useState(0);
   const [microphoneLevel, setMicrophoneLevel] = useState(0);
@@ -101,10 +102,14 @@ export function AudioTester() {
       // Start capturing speaker output (loopback)
       await invoke('test_speaker_capture', { deviceIndex: parseInt(selectedSpeaker) });
 
-      // Start simulating audio levels (replace with actual audio level monitoring)
-      levelIntervalRef.current = window.setInterval(() => {
-        // Simulate audio levels - in reality, this should come from the audio capture
-        setSpeakerLevel(Math.random() * 100);
+      // Poll for actual audio levels from the backend
+      levelIntervalRef.current = window.setInterval(async () => {
+        try {
+          const level = await invoke<number>('get_current_audio_level');
+          setSpeakerLevel(level);
+        } catch (err) {
+          console.error('Failed to get audio level:', err);
+        }
       }, 100);
 
     } catch (err) {
@@ -136,9 +141,14 @@ export function AudioTester() {
       // Start capturing microphone input
       await invoke('test_microphone_capture', { deviceIndex: parseInt(selectedMicrophone) });
 
-      // Start simulating audio levels
-      levelIntervalRef.current = window.setInterval(() => {
-        setMicrophoneLevel(Math.random() * 100);
+      // Poll for actual audio levels from the backend
+      levelIntervalRef.current = window.setInterval(async () => {
+        try {
+          const level = await invoke<number>('get_current_audio_level');
+          setMicrophoneLevel(level);
+        } catch (err) {
+          console.error('Failed to get audio level:', err);
+        }
       }, 100);
 
     } catch (err) {
@@ -159,6 +169,21 @@ export function AudioTester() {
       }
     } catch (err) {
       setError(`Failed to stop microphone test: ${err}`);
+    }
+  };
+
+  const playTestTone = async () => {
+    try {
+      setError(null);
+      setIsPlayingTestTone(true);
+
+      // Play a 1-second test tone through the selected speaker
+      await invoke('play_test_tone', { deviceIndex: parseInt(selectedSpeaker) });
+
+      setIsPlayingTestTone(false);
+    } catch (err) {
+      setError(`Failed to play test tone: ${err}`);
+      setIsPlayingTestTone(false);
     }
   };
 
@@ -265,13 +290,28 @@ export function AudioTester() {
             </Box>
           )}
 
-            <Button
-              colorScheme={isSpeakerTesting ? 'red' : 'blue'}
-              onClick={isSpeakerTesting ? stopSpeakerTest : startSpeakerTest}
-              disabled={!selectedSpeaker || isMicrophoneTesting}
-            >
-              {isSpeakerTesting ? 'Stop Speaker Test' : 'Start Speaker Test'}
-            </Button>
+            <HStack gap={2}>
+              <Button
+                colorScheme="purple"
+                onClick={playTestTone}
+                disabled={!selectedSpeaker || isMicrophoneTesting || isSpeakerTesting || isPlayingTestTone}
+                flex={1}
+              >
+                {isPlayingTestTone ? 'Playing...' : '🔊 Play Test Tone'}
+              </Button>
+              <Button
+                colorScheme={isSpeakerTesting ? 'red' : 'blue'}
+                onClick={isSpeakerTesting ? stopSpeakerTest : startSpeakerTest}
+                disabled={!selectedSpeaker || isMicrophoneTesting || isPlayingTestTone}
+                flex={1}
+              >
+                {isSpeakerTesting ? 'Stop Capture Test' : 'Start Capture Test'}
+              </Button>
+            </HStack>
+
+            <Text fontSize="xs" color="gray.600">
+              💡 Click "Play Test Tone" to hear a 1-second sound through your speaker, or "Start Capture Test" to see the audio level meter during playback
+            </Text>
           </VStack>
         </Box>
       )}
@@ -343,14 +383,13 @@ export function AudioTester() {
       )}
 
       {/* Important Note */}
-      <Box bg="yellow.50" borderWidth="1px" borderColor="yellow.200" borderRadius="md" p={4}>
-        <Text fontSize="sm" fontWeight="600" mb={2} color="yellow.900">
-          ⚠️ Current Implementation Issue
+      <Box bg="green.50" borderWidth="1px" borderColor="green.200" borderRadius="md" p={4}>
+        <Text fontSize="sm" fontWeight="600" mb={2} color="green.900">
+          ✅ Dual-Capture Mixing Enabled
         </Text>
-        <Text fontSize="sm" color="yellow.800">
-          Currently, only speaker output (loopback) is being captured during meetings.
-          Microphone input is NOT being captured, which means your voice is not included in recordings.
-          This is a known issue that needs to be fixed by implementing dual-capture mixing.
+        <Text fontSize="sm" color="green.800">
+          This application now captures BOTH speaker output (what others say) AND microphone input (your voice)
+          during meetings. Use the tests above to verify both audio sources are working correctly before starting a meeting.
         </Text>
       </Box>
     </VStack>

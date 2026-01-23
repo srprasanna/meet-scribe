@@ -113,8 +113,7 @@ async fn update_tray_status(
         } else {
             "Meet Scribe - Idle"
         };
-        tray.set_tooltip(Some(tooltip))
-            .map_err(|e| e.to_string())?;
+        tray.set_tooltip(Some(tooltip)).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -219,6 +218,8 @@ fn main() {
             commands::meeting::test_speaker_capture,
             commands::meeting::test_microphone_capture,
             commands::meeting::stop_audio_test,
+            commands::meeting::get_current_audio_level,
+            commands::meeting::play_test_tone,
             // Transcription commands (batch)
             commands::transcription::start_transcription,
             commands::transcription::get_transcription_status,

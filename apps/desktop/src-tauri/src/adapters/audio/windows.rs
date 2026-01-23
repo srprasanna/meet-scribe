@@ -37,6 +37,10 @@ pub struct WasapiAudioCapture {
     /// Audio format - placeholder until capture starts, then auto-detected
     format: AudioFormat,
     capture_handle: Option<tokio::task::JoinHandle<()>>,
+    /// Second capture handle for dual-capture (microphone)
+    mic_capture_handle: Option<tokio::task::JoinHandle<()>>,
+    /// Current audio level (0.0 to 1.0) for visual feedback
+    current_level: Arc<Mutex<f32>>,
 }
 
 impl WasapiAudioCapture {
@@ -50,6 +54,8 @@ impl WasapiAudioCapture {
             audio_buffer: Arc::new(Mutex::new(Vec::new())),
             format: AudioFormat::default(), // Placeholder, updated during start_capture()
             capture_handle: None,
+            mic_capture_handle: None,
+            current_level: Arc::new(Mutex::new(0.0)),
         }
     }
 
@@ -130,6 +136,44 @@ impl WasapiAudioCapture {
 
             collection.Item(actual_index as u32).map_err(|e| {
                 AppError::AudioCapture(format!("Failed to get device {}: {}", actual_index, e))
+            })
+        }
+    }
+
+    /// Get microphone device by index
+    ///
+    /// Searches through all active capture devices and returns the one at the given index.
+    fn get_microphone_by_index(device_index: usize) -> Result<IMMDevice> {
+        use windows::Win32::Media::Audio::DEVICE_STATE_ACTIVE;
+
+        unsafe {
+            let enumerator: IMMDeviceEnumerator =
+                CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).map_err(|e| {
+                    AppError::AudioCapture(format!("Failed to create device enumerator: {}", e))
+                })?;
+
+            let collection = enumerator
+                .EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE)
+                .map_err(|e| {
+                    AppError::AudioCapture(format!("Failed to enumerate audio endpoints: {}", e))
+                })?;
+
+            let count = collection.GetCount().map_err(|e| {
+                AppError::AudioCapture(format!("Failed to get device count: {}", e))
+            })?;
+
+            if device_index >= count as usize {
+                return Err(AppError::AudioCapture(format!(
+                    "Microphone device index {} out of range (total: {})",
+                    device_index, count
+                )));
+            }
+
+            collection.Item(device_index as u32).map_err(|e| {
+                AppError::AudioCapture(format!(
+                    "Failed to get microphone device {}: {}",
+                    device_index, e
+                ))
             })
         }
     }
@@ -300,6 +344,50 @@ impl WasapiAudioCapture {
         }
     }
 
+    /// Initialize the audio client for microphone capture (non-loopback)
+    ///
+    /// Similar to initialize_audio_client but doesn't use loopback mode
+    fn initialize_microphone_client(
+        audio_client: &IAudioClient,
+    ) -> Result<(WAVEFORMATEX, u32, u16)> {
+        unsafe {
+            // Get the device's mix format (auto-detected from system)
+            let mix_format_ptr = audio_client
+                .GetMixFormat()
+                .map_err(|e| AppError::AudioCapture(format!("Failed to get mix format: {}", e)))?;
+
+            if mix_format_ptr.is_null() {
+                return Err(AppError::AudioCapture(
+                    "Mix format pointer is null".to_string(),
+                ));
+            }
+
+            let mix_format = *mix_format_ptr;
+            let sample_rate = mix_format.nSamplesPerSec;
+            let bits_per_sample = mix_format.wBitsPerSample;
+
+            // Initialize the audio client for normal (non-loopback) capture
+            let buffer_duration = 10_000_000; // 1 second in 100-nanosecond units
+            audio_client
+                .Initialize(
+                    AUDCLNT_SHAREMODE_SHARED,
+                    0, // No special flags (normal capture, not loopback)
+                    buffer_duration,
+                    0,
+                    mix_format_ptr,
+                    None,
+                )
+                .map_err(|e| {
+                    AppError::AudioCapture(format!("Failed to initialize microphone client: {}", e))
+                })?;
+
+            // Free the mix format
+            windows::Win32::System::Com::CoTaskMemFree(Some(mix_format_ptr as *const _));
+
+            Ok((mix_format, sample_rate, bits_per_sample))
+        }
+    }
+
     /// Convert audio samples from bytes to f32 normalized format based on format
     fn convert_samples_to_f32(data: &[u8], format: &WAVEFORMATEX) -> Vec<f32> {
         let mut samples = Vec::new();
@@ -337,6 +425,18 @@ impl WasapiAudioCapture {
         samples
     }
 
+    /// Calculate RMS (Root Mean Square) audio level from samples
+    /// Returns a value between 0.0 and 1.0 representing the audio level
+    fn calculate_rms_level(samples: &[f32]) -> f32 {
+        if samples.is_empty() {
+            return 0.0;
+        }
+
+        let sum_of_squares: f32 = samples.iter().map(|&s| s * s).sum();
+        let mean_square = sum_of_squares / samples.len() as f32;
+        mean_square.sqrt()
+    }
+
     /// Perform the actual audio capture loop
     fn capture_loop(
         audio_client: IAudioClient,
@@ -344,6 +444,7 @@ impl WasapiAudioCapture {
         format: WAVEFORMATEX,
         is_capturing: Arc<Mutex<bool>>,
         audio_buffer: Arc<Mutex<Vec<f32>>>,
+        current_level: Arc<Mutex<f32>>,
     ) {
         unsafe {
             // Start the audio client
@@ -398,6 +499,10 @@ impl WasapiAudioCapture {
 
                                 // Convert to f32 samples
                                 let samples = Self::convert_samples_to_f32(data_slice, &format);
+
+                                // Calculate and update current audio level
+                                let level = Self::calculate_rms_level(&samples);
+                                *current_level.lock().unwrap() = level;
 
                                 // Append to the buffer
                                 let mut buffer = audio_buffer.lock().unwrap();
@@ -676,6 +781,7 @@ impl AudioCapturePort for WasapiAudioCapture {
 
         let is_capturing_clone = Arc::clone(&self.is_capturing);
         let audio_buffer_clone = Arc::clone(&self.audio_buffer);
+        let current_level_clone = Arc::clone(&self.current_level);
 
         // Store format info to be updated after detection
         let format_info = Arc::new(Mutex::new(AudioFormat::default()));
@@ -780,6 +886,7 @@ impl AudioCapturePort for WasapiAudioCapture {
                 format,
                 is_capturing_clone,
                 audio_buffer_clone,
+                current_level_clone,
             );
 
             unsafe {
@@ -806,6 +913,348 @@ impl AudioCapturePort for WasapiAudioCapture {
         Ok(())
     }
 
+    async fn start_dual_capture(
+        &mut self,
+        speaker_device: Option<String>,
+        microphone_device: Option<String>,
+    ) -> Result<()> {
+        {
+            let mut is_capturing = self.is_capturing.lock().unwrap();
+            if *is_capturing {
+                return Err(AppError::AudioCapture(
+                    "Capture already in progress".to_string(),
+                ));
+            }
+            *is_capturing = true;
+        }
+
+        let is_capturing_clone = Arc::clone(&self.is_capturing);
+        // Note: audio_buffer is not used directly in dual-capture - speaker_buffer and mic_buffer
+        // are used instead, and the mixer thread writes to self.audio_buffer
+
+        // Store format info to be updated after detection
+        // This will be updated by whichever capture thread starts first
+        let format_info = Arc::new(Mutex::new(AudioFormat::default()));
+
+        // Parse device indices
+        log::info!("Speaker device string: {:?}", speaker_device);
+        log::info!("Microphone device string: {:?}", microphone_device);
+
+        let speaker_index = speaker_device
+            .as_ref()
+            .and_then(|name| name.split(':').next()?.trim().parse::<usize>().ok());
+
+        let microphone_index = microphone_device
+            .as_ref()
+            .and_then(|name| name.split(':').next()?.trim().parse::<usize>().ok());
+
+        log::info!(
+            "Starting dual-capture: speaker index {:?}, microphone index {:?}",
+            speaker_index,
+            microphone_index
+        );
+
+        // If both devices are None, return error
+        if speaker_index.is_none() && microphone_index.is_none() {
+            *self.is_capturing.lock().unwrap() = false;
+            return Err(AppError::AudioCapture(
+                "At least one device (speaker or microphone) must be specified".to_string(),
+            ));
+        }
+
+        // Spawn speaker (loopback) capture thread (if speaker device specified)
+        let speaker_buffer = Arc::new(Mutex::new(Vec::new()));
+        let speaker_buffer_clone = Arc::clone(&speaker_buffer);
+        let speaker_is_capturing = Arc::clone(&is_capturing_clone);
+        let speaker_level = Arc::clone(&self.current_level);
+        let speaker_format_info = Arc::clone(&format_info);
+
+        let speaker_handle = if let Some(spk_idx) = speaker_index {
+            Some(tokio::task::spawn_blocking(move || {
+                if let Err(e) = Self::init_com() {
+                    log::error!("Failed to initialize COM for speaker capture: {}", e);
+                    *speaker_is_capturing.lock().unwrap() = false;
+                    return;
+                }
+
+                let device = match Self::get_device_by_index(spk_idx) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        log::error!("Failed to get speaker device: {}", e);
+                        *speaker_is_capturing.lock().unwrap() = false;
+                        unsafe {
+                            CoUninitialize();
+                        }
+                        return;
+                    }
+                };
+
+                let audio_client: IAudioClient =
+                    match unsafe { device.Activate::<IAudioClient>(CLSCTX_ALL, None) } {
+                        Ok(client) => client,
+                        Err(e) => {
+                            log::error!("Failed to activate speaker audio client: {}", e);
+                            *speaker_is_capturing.lock().unwrap() = false;
+                            unsafe {
+                                CoUninitialize();
+                            }
+                            return;
+                        }
+                    };
+
+                let (format, sample_rate, bits_per_sample) =
+                    match Self::initialize_audio_client(&audio_client) {
+                        Ok(f) => f,
+                        Err(e) => {
+                            log::error!("Failed to initialize speaker audio client: {}", e);
+                            *speaker_is_capturing.lock().unwrap() = false;
+                            unsafe {
+                                CoUninitialize();
+                            }
+                            return;
+                        }
+                    };
+
+                let capture_client: IAudioCaptureClient =
+                    match unsafe { audio_client.GetService::<IAudioCaptureClient>() } {
+                        Ok(client) => client,
+                        Err(e) => {
+                            log::error!("Failed to get speaker capture client: {}", e);
+                            *speaker_is_capturing.lock().unwrap() = false;
+                            unsafe {
+                                CoUninitialize();
+                            }
+                            return;
+                        }
+                    };
+
+                // Store channels value to avoid packed field reference
+                let channels = format.nChannels;
+
+                // Update the shared format info with speaker format
+                // Speaker format is typically the master format for loopback capture
+                *speaker_format_info.lock().unwrap() = AudioFormat {
+                    sample_rate,
+                    channels,
+                    bits_per_sample,
+                };
+
+                log::info!(
+                    "Speaker capture initialized: {} Hz, {} channels, {} bits",
+                    sample_rate,
+                    channels,
+                    bits_per_sample
+                );
+
+                Self::capture_loop(
+                    audio_client,
+                    capture_client,
+                    format,
+                    speaker_is_capturing,
+                    speaker_buffer_clone,
+                    speaker_level,
+                );
+
+                unsafe {
+                    CoUninitialize();
+                }
+            }))
+        } else {
+            log::info!("Skipping speaker capture (no speaker device specified)");
+            None
+        };
+
+        // Spawn microphone capture thread (if microphone device specified)
+        let mic_buffer = Arc::new(Mutex::new(Vec::new()));
+        let mic_buffer_clone = Arc::clone(&mic_buffer);
+        let mic_is_capturing = Arc::clone(&is_capturing_clone);
+        let format_info_clone2 = Arc::clone(&format_info);
+        let mic_level = Arc::clone(&self.current_level);
+
+        let mic_handle = if let Some(mic_idx) = microphone_index {
+            Some(tokio::task::spawn_blocking(move || {
+                if let Err(e) = Self::init_com() {
+                    log::error!("Failed to initialize COM for microphone capture: {}", e);
+                    *mic_is_capturing.lock().unwrap() = false;
+                    return;
+                }
+
+                let device = match Self::get_microphone_by_index(mic_idx) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        log::error!("Failed to get microphone device: {}", e);
+                        *mic_is_capturing.lock().unwrap() = false;
+                        unsafe {
+                            CoUninitialize();
+                        }
+                        return;
+                    }
+                };
+
+                let audio_client: IAudioClient =
+                    match unsafe { device.Activate::<IAudioClient>(CLSCTX_ALL, None) } {
+                        Ok(client) => client,
+                        Err(e) => {
+                            log::error!("Failed to activate microphone audio client: {}", e);
+                            *mic_is_capturing.lock().unwrap() = false;
+                            unsafe {
+                                CoUninitialize();
+                            }
+                            return;
+                        }
+                    };
+
+                let (format, sample_rate, bits_per_sample) =
+                    match Self::initialize_microphone_client(&audio_client) {
+                        Ok(f) => f,
+                        Err(e) => {
+                            log::error!("Failed to initialize microphone audio client: {}", e);
+                            *mic_is_capturing.lock().unwrap() = false;
+                            unsafe {
+                                CoUninitialize();
+                            }
+                            return;
+                        }
+                    };
+
+                // Update format from microphone only if speaker format not already set
+                // Speaker format takes priority as it's the loopback (system audio) source
+                let channels = format.nChannels;
+                {
+                    let mut fmt = format_info_clone2.lock().unwrap();
+                    // Only update if still at default (speaker didn't set it)
+                    if fmt.sample_rate == 16000 && fmt.channels == 1 {
+                        *fmt = AudioFormat {
+                            sample_rate,
+                            channels,
+                            bits_per_sample,
+                        };
+                        log::info!("Using microphone format as master (no speaker specified)");
+                    } else {
+                        log::info!(
+                        "Speaker format already set ({} Hz, {} ch), microphone format ignored ({} Hz, {} ch)",
+                        fmt.sample_rate, fmt.channels, sample_rate, channels
+                    );
+                    }
+                }
+
+                let capture_client: IAudioCaptureClient =
+                    match unsafe { audio_client.GetService::<IAudioCaptureClient>() } {
+                        Ok(client) => client,
+                        Err(e) => {
+                            log::error!("Failed to get microphone capture client: {}", e);
+                            *mic_is_capturing.lock().unwrap() = false;
+                            unsafe {
+                                CoUninitialize();
+                            }
+                            return;
+                        }
+                    };
+
+                log::info!(
+                    "Microphone capture initialized: {} Hz, {} channels, {} bits",
+                    sample_rate,
+                    channels,
+                    bits_per_sample
+                );
+
+                Self::capture_loop(
+                    audio_client,
+                    capture_client,
+                    format,
+                    mic_is_capturing,
+                    mic_buffer_clone,
+                    mic_level,
+                );
+
+                unsafe {
+                    CoUninitialize();
+                }
+            }))
+        } else {
+            log::info!("Skipping microphone capture (no microphone device specified)");
+            None
+        };
+
+        self.capture_handle = speaker_handle;
+        self.mic_capture_handle = mic_handle;
+
+        // Wait for format detection - capture threads need time to initialize and update format
+        // 200ms should be sufficient for WASAPI initialization
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        self.format = format_info.lock().unwrap().clone();
+
+        // Warn if format is still at default - this indicates a bug
+        if self.format.sample_rate == 16000 && self.format.channels == 1 {
+            log::warn!(
+                "Format still at default after capture start! This may indicate initialization failed."
+            );
+        }
+
+        // Spawn mixer thread to combine both audio streams
+        let is_capturing_mixer = Arc::clone(&self.is_capturing);
+        let mixed_buffer = Arc::clone(&self.audio_buffer);
+
+        tokio::spawn(async move {
+            let mut total_mixed = 0usize;
+            while *is_capturing_mixer.lock().unwrap() {
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+                // Mix audio from both buffers
+                let speaker_samples: Vec<f32> = {
+                    let mut buffer = speaker_buffer.lock().unwrap();
+                    buffer.drain(..).collect()
+                };
+
+                let mic_samples: Vec<f32> = {
+                    let mut buffer = mic_buffer.lock().unwrap();
+                    buffer.drain(..).collect()
+                };
+
+                if !speaker_samples.is_empty() || !mic_samples.is_empty() {
+                    log::debug!(
+                        "Mixer: speaker_samples={}, mic_samples={}",
+                        speaker_samples.len(),
+                        mic_samples.len()
+                    );
+
+                    // Mix the two streams
+                    let max_len = speaker_samples.len().max(mic_samples.len());
+                    let mut mixed = Vec::with_capacity(max_len);
+
+                    for i in 0..max_len {
+                        let speaker_sample = speaker_samples.get(i).copied().unwrap_or(0.0);
+                        let mic_sample = mic_samples.get(i).copied().unwrap_or(0.0);
+
+                        // Simple mixing: add and divide by 2 (average)
+                        // This prevents clipping while maintaining reasonable levels
+                        let mixed_sample = (speaker_sample + mic_sample) / 2.0;
+                        mixed.push(mixed_sample);
+                    }
+
+                    // Append to final buffer
+                    let mut final_buffer = mixed_buffer.lock().unwrap();
+                    final_buffer.extend(mixed);
+                    total_mixed += max_len;
+
+                    if total_mixed % 48000 == 0 {
+                        log::info!("Mixed {} total samples so far", total_mixed);
+                    }
+                }
+            }
+            log::info!("Mixer thread stopped. Total samples mixed: {}", total_mixed);
+        });
+
+        log::info!(
+            "Dual-capture started: {} Hz, {} channels, {} bits",
+            self.format.sample_rate,
+            self.format.channels,
+            self.format.bits_per_sample
+        );
+
+        Ok(())
+    }
+
     async fn stop_capture(&mut self) -> Result<()> {
         {
             let mut is_capturing = self.is_capturing.lock().unwrap();
@@ -815,10 +1264,16 @@ impl AudioCapturePort for WasapiAudioCapture {
             *is_capturing = false;
         } // MutexGuard dropped here
 
-        // Wait for capture thread to finish
+        // Wait for both capture threads to finish
         if let Some(handle) = self.capture_handle.take() {
             handle.await.map_err(|e| {
-                AppError::AudioCapture(format!("Failed to stop capture thread: {}", e))
+                AppError::AudioCapture(format!("Failed to stop speaker capture thread: {}", e))
+            })?;
+        }
+
+        if let Some(handle) = self.mic_capture_handle.take() {
+            handle.await.map_err(|e| {
+                AppError::AudioCapture(format!("Failed to stop microphone capture thread: {}", e))
             })?;
         }
 
@@ -845,6 +1300,213 @@ impl AudioCapturePort for WasapiAudioCapture {
 
     fn get_format(&self) -> AudioFormat {
         self.format.clone()
+    }
+
+    fn get_current_level(&self) -> f32 {
+        *self.current_level.lock().unwrap()
+    }
+}
+
+impl WasapiAudioCapture {
+    /// Generate a test tone (sine wave) for speaker testing
+    /// Returns audio samples at the specified frequency
+    pub fn generate_test_tone(duration_seconds: f32, sample_rate: u32, frequency: f32) -> Vec<f32> {
+        let num_samples = (duration_seconds * sample_rate as f32) as usize;
+        let mut samples = Vec::with_capacity(num_samples);
+
+        for i in 0..num_samples {
+            let t = i as f32 / sample_rate as f32;
+            let sample = (2.0 * std::f32::consts::PI * frequency * t).sin() * 0.3; // 30% volume
+            samples.push(sample);
+        }
+
+        samples
+    }
+
+    /// Play audio through the specified speaker device
+    /// This is used for testing speaker output
+    pub async fn play_audio(
+        device_index: usize,
+        samples: Vec<f32>,
+        sample_rate: u32,
+    ) -> Result<()> {
+        tokio::task::spawn_blocking(move || {
+            Self::play_audio_blocking(device_index, samples, sample_rate)
+        })
+        .await
+        .map_err(|e| AppError::AudioCapture(format!("Playback task failed: {}", e)))?
+    }
+
+    /// Blocking version of play_audio for use in spawn_blocking
+    fn play_audio_blocking(
+        device_index: usize,
+        samples: Vec<f32>,
+        _sample_rate: u32,
+    ) -> Result<()> {
+        use windows::Win32::Media::Audio::{
+            IAudioRenderClient, AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_SHAREMODE_SHARED,
+        };
+
+        unsafe {
+            // Initialize COM for this thread
+            Self::init_com()?;
+
+            // Get the playback device (render endpoint)
+            let device = Self::get_device_by_index(device_index)?;
+
+            // Activate audio client
+            let audio_client: IAudioClient = device
+                .Activate::<IAudioClient>(CLSCTX_ALL, None)
+                .map_err(|e| {
+                    AppError::AudioCapture(format!("Failed to activate audio client: {}", e))
+                })?;
+
+            // Get the device format
+            let mix_format_ptr = audio_client
+                .GetMixFormat()
+                .map_err(|e| AppError::AudioCapture(format!("Failed to get mix format: {}", e)))?;
+
+            if mix_format_ptr.is_null() {
+                return Err(AppError::AudioCapture(
+                    "Mix format pointer is null".to_string(),
+                ));
+            }
+
+            let mix_format = *mix_format_ptr;
+
+            // Initialize the audio client for playback
+            let buffer_duration = 10_000_000; // 1 second in 100-nanosecond units
+            audio_client
+                .Initialize(
+                    AUDCLNT_SHAREMODE_SHARED,
+                    0, // No special flags for playback
+                    buffer_duration,
+                    0,
+                    mix_format_ptr,
+                    None,
+                )
+                .map_err(|e| {
+                    windows::Win32::System::Com::CoTaskMemFree(Some(mix_format_ptr as *const _));
+                    AppError::AudioCapture(format!("Failed to initialize audio client: {}", e))
+                })?;
+
+            // Get buffer size
+            let buffer_frame_count = audio_client.GetBufferSize().map_err(|e| {
+                windows::Win32::System::Com::CoTaskMemFree(Some(mix_format_ptr as *const _));
+                AppError::AudioCapture(format!("Failed to get buffer size: {}", e))
+            })?;
+
+            // Get render client
+            let render_client: IAudioRenderClient = audio_client
+                .GetService::<IAudioRenderClient>()
+                .map_err(|e| {
+                    windows::Win32::System::Com::CoTaskMemFree(Some(mix_format_ptr as *const _));
+                    AppError::AudioCapture(format!("Failed to get render client: {}", e))
+                })?;
+
+            // Start the audio client
+            audio_client.Start().map_err(|e| {
+                windows::Win32::System::Com::CoTaskMemFree(Some(mix_format_ptr as *const _));
+                AppError::AudioCapture(format!("Failed to start audio client: {}", e))
+            })?;
+
+            // Convert samples to the device format and write to buffer
+            let channels = mix_format.nChannels as usize;
+            let bits_per_sample = mix_format.wBitsPerSample;
+            let bytes_per_sample = (bits_per_sample / 8) as usize;
+
+            let mut sample_index = 0;
+            while sample_index < samples.len() {
+                // Wait for buffer to be ready
+                std::thread::sleep(std::time::Duration::from_millis(10));
+
+                // Get number of frames we can write
+                let padding = audio_client.GetCurrentPadding().map_err(|e| {
+                    windows::Win32::System::Com::CoTaskMemFree(Some(mix_format_ptr as *const _));
+                    AppError::AudioCapture(format!("Failed to get padding: {}", e))
+                })?;
+
+                let frames_available = buffer_frame_count.saturating_sub(padding);
+
+                if frames_available > 0 {
+                    // Get the buffer
+                    let buffer_ptr = render_client.GetBuffer(frames_available).map_err(|e| {
+                        windows::Win32::System::Com::CoTaskMemFree(Some(
+                            mix_format_ptr as *const _,
+                        ));
+                        AppError::AudioCapture(format!("Failed to get buffer: {}", e))
+                    })?;
+
+                    let buffer_size = frames_available as usize * channels * bytes_per_sample;
+                    let buffer_slice = std::slice::from_raw_parts_mut(buffer_ptr, buffer_size);
+
+                    // Write samples to buffer
+                    let mut buffer_pos = 0;
+                    for _ in 0..frames_available {
+                        if sample_index >= samples.len() {
+                            // Pad with silence
+                            for _ in 0..channels {
+                                for b in 0..bytes_per_sample {
+                                    buffer_slice[buffer_pos + b] = 0;
+                                }
+                                buffer_pos += bytes_per_sample;
+                            }
+                        } else {
+                            let sample = samples[sample_index];
+                            sample_index += 1;
+
+                            // Write same sample to all channels
+                            for _ in 0..channels {
+                                match bits_per_sample {
+                                    16 => {
+                                        // 16-bit PCM
+                                        let value = (sample * 32767.0) as i16;
+                                        buffer_slice[buffer_pos..buffer_pos + 2]
+                                            .copy_from_slice(&value.to_le_bytes());
+                                        buffer_pos += 2;
+                                    }
+                                    32 => {
+                                        // 32-bit float
+                                        buffer_slice[buffer_pos..buffer_pos + 4]
+                                            .copy_from_slice(&sample.to_le_bytes());
+                                        buffer_pos += 4;
+                                    }
+                                    _ => {
+                                        // Unsupported format
+                                        buffer_slice[buffer_pos..buffer_pos + bytes_per_sample]
+                                            .fill(0);
+                                        buffer_pos += bytes_per_sample;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Release the buffer
+                    render_client
+                        .ReleaseBuffer(frames_available, 0)
+                        .map_err(|e| {
+                            windows::Win32::System::Com::CoTaskMemFree(Some(
+                                mix_format_ptr as *const _,
+                            ));
+                            AppError::AudioCapture(format!("Failed to release buffer: {}", e))
+                        })?;
+                }
+            }
+
+            // Wait for playback to finish
+            std::thread::sleep(std::time::Duration::from_millis(100));
+
+            // Stop the audio client
+            audio_client.Stop().ok();
+
+            // Free the mix format
+            windows::Win32::System::Com::CoTaskMemFree(Some(mix_format_ptr as *const _));
+
+            CoUninitialize();
+
+            Ok(())
+        }
     }
 }
 
