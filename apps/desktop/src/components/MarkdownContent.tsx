@@ -20,58 +20,39 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
     <ReactMarkdown
       components={{
         // Style for paragraphs
-        p: ({ children, node }) => {
-          // Paragraphs inside list items should have no margin
-          // ReactMarkdown wraps list item text in <p> tags
-          const parent = node?.parent;
-          const isInListItem = parent?.type === 'listItem';
-
-          return (
-            <p style={{
-              margin: isInListItem ? '0' : '0 0 6px 0',
-              lineHeight: '1.5',
-              whiteSpace: 'pre-wrap',
-              wordWrap: 'break-word'
-            }}>
-              {children}
-            </p>
-          );
-        },
+        p: ({ children }) => (
+          <p style={{
+            margin: '0 0 6px 0',
+            lineHeight: '1.5',
+            whiteSpace: 'pre-wrap',
+            wordWrap: 'break-word'
+          }}>
+            {children}
+          </p>
+        ),
         // Style for lists
-        ul: ({ children, node }) => {
-          // Check if this list is nested inside another list
-          const parent = node?.parent;
-          const isNested = parent?.type === 'listItem';
-
-          return (
-            <ul style={{
-              margin: isNested ? '0' : '0 0 6px 0',
-              paddingLeft: '28px',
-              lineHeight: '1.5',
-              listStyleType: 'disc',
-              listStylePosition: 'outside'
-            }}>
-              {children}
-            </ul>
-          );
-        },
-        ol: ({ children, node }) => {
-          // Check if this list is nested inside another list
-          const parent = node?.parent;
-          const isNested = parent?.type === 'listItem';
-
-          return (
-            <ol style={{
-              margin: isNested ? '0' : '0 0 6px 0',
-              paddingLeft: '28px',
-              lineHeight: '1.5',
-              listStyleType: 'decimal',
-              listStylePosition: 'outside'
-            }}>
-              {children}
-            </ol>
-          );
-        },
+        ul: ({ children }) => (
+          <ul style={{
+            margin: '0 0 6px 0',
+            paddingLeft: '28px',
+            lineHeight: '1.5',
+            listStyleType: 'disc',
+            listStylePosition: 'outside'
+          }}>
+            {children}
+          </ul>
+        ),
+        ol: ({ children }) => (
+          <ol style={{
+            margin: '0 0 6px 0',
+            paddingLeft: '28px',
+            lineHeight: '1.5',
+            listStyleType: 'decimal',
+            listStylePosition: 'outside'
+          }}>
+            {children}
+          </ol>
+        ),
         // Style for list items
         li: ({ children }) => (
           <li style={{

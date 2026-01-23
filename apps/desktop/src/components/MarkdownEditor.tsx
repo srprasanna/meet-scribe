@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { MarkdownContent } from './MarkdownContent';
-import { Button, HStack, Box, Tabs } from '@chakra-ui/react';
+import { Button, HStack, Box } from '@chakra-ui/react';
 
 interface MarkdownEditorProps {
   initialContent: string;

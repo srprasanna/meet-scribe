@@ -36,11 +36,10 @@ export function AudioDeviceSelector({
       >
         {label}
       </label>
-      <NativeSelectRoot>
+      <NativeSelectRoot disabled={loading || disabled}>
         <NativeSelectField
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          disabled={loading || disabled}
         >
           {loading ? (
             <option>Loading devices...</option>
