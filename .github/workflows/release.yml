@@ -1,5 +1,10 @@
 name: Release
 
+# Two ways to trigger a release:
+# 1. workflow_dispatch: Manually trigger with version input (bumps version files, commits, creates release)
+# 2. push.tags: Push a version tag manually (e.g., git tag v1.0.0 && git push origin v1.0.0)
+#
+# Note: workflow_dispatch does NOT push tags to prevent double-triggering
 on:
   push:
     tags:
@@ -87,12 +92,13 @@ jobs:
             git push origin main
           fi
 
-          # Create and push tag (only if it doesn't exist)
+          # Create tag locally (DON'T push to prevent double-trigger)
+          # Tag is only used for creating the GitHub release, not pushed to remote
           if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists, skipping tag creation"
+            echo "Tag $TAG already exists"
           else
+            echo "Creating local tag $TAG for release (not pushing to remote)"
             git tag "$TAG"
-            git push origin "$TAG"
           fi
 
       - name: Create GitHub Release
@@ -205,6 +211,20 @@ jobs:
         run: |
           Get-ChildItem -Path apps/desktop/src-tauri/target/release/bundle -Recurse | Select-Object FullName
 
+      - name: Check if signature was created
+        id: check_sig
+        shell: pwsh
+        run: |
+          $sigPath = "apps/desktop/src-tauri/target/release/bundle/msi/meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi.sig"
+          if (Test-Path $sigPath) {
+            Write-Host "Signature file found: $sigPath"
+            echo "sig_exists=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "Signature file NOT found: $sigPath"
+            Write-Host "This is expected if TAURI_SIGNING_PRIVATE_KEY is not configured or signing failed"
+            echo "sig_exists=false" >> $env:GITHUB_OUTPUT
+          }
+
       - name: Upload Windows MSI
         uses: actions/upload-release-asset@v1
         env:
@@ -216,7 +236,7 @@ jobs:
           asset_content_type: application/x-msi
 
       - name: Upload Windows MSI Signature
-        continue-on-error: true
+        if: steps.check_sig.outputs.sig_exists == 'true'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
@@ -227,7 +247,7 @@ jobs:
           asset_content_type: text/plain
 
       - name: Save Windows signature as artifact
-        continue-on-error: true
+        if: steps.check_sig.outputs.sig_exists == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: windows-sig
@@ -295,6 +315,19 @@ jobs:
         run: |
           Get-ChildItem -Path apps/desktop/src-tauri/target/aarch64-pc-windows-msvc/release/bundle -Recurse | Select-Object FullName
 
+      - name: Check if ARM64 signature was created
+        id: check_arm64_sig
+        shell: pwsh
+        run: |
+          $sigPath = "apps/desktop/src-tauri/target/aarch64-pc-windows-msvc/release/bundle/msi/meet-scribe_${{ needs.prepare-release.outputs.version }}_arm64_en-US.msi.sig"
+          if (Test-Path $sigPath) {
+            Write-Host "ARM64 signature file found: $sigPath"
+            echo "sig_exists=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "ARM64 signature file NOT found: $sigPath"
+            echo "sig_exists=false" >> $env:GITHUB_OUTPUT
+          }
+
       - name: Upload Windows ARM64 MSI
         uses: actions/upload-release-asset@v1
         env:
@@ -306,7 +339,7 @@ jobs:
           asset_content_type: application/x-msi
 
       - name: Upload Windows ARM64 MSI Signature
-        continue-on-error: true
+        if: steps.check_arm64_sig.outputs.sig_exists == 'true'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
@@ -317,7 +350,7 @@ jobs:
           asset_content_type: text/plain
 
       - name: Save Windows ARM64 signature as artifact
-        continue-on-error: true
+        if: steps.check_arm64_sig.outputs.sig_exists == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: windows-arm64-sig
@@ -429,8 +462,20 @@ jobs:
           asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage
           asset_content_type: application/octet-stream
 
+      - name: Check if Linux signature was created
+        id: check_linux_sig
+        run: |
+          SIG_PATH="apps/desktop/src-tauri/target/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage.sig"
+          if [ -f "$SIG_PATH" ]; then
+            echo "Linux signature file found: $SIG_PATH"
+            echo "sig_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Linux signature file NOT found: $SIG_PATH"
+            echo "sig_exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Upload Linux AppImage Signature
-        continue-on-error: true
+        if: steps.check_linux_sig.outputs.sig_exists == 'true'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
@@ -441,7 +486,7 @@ jobs:
           asset_content_type: text/plain
 
       - name: Save Linux signature as artifact
-        continue-on-error: true
+        if: steps.check_linux_sig.outputs.sig_exists == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: linux-sig
@@ -557,8 +602,20 @@ jobs:
           asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_arm64.AppImage
           asset_content_type: application/octet-stream
 
+      - name: Check if Linux ARM64 signature was created
+        id: check_linux_arm64_sig
+        run: |
+          SIG_PATH="apps/desktop/src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_aarch64.AppImage.sig"
+          if [ -f "$SIG_PATH" ]; then
+            echo "Linux ARM64 signature file found: $SIG_PATH"
+            echo "sig_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Linux ARM64 signature file NOT found: $SIG_PATH"
+            echo "sig_exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Upload Linux ARM64 AppImage Signature
-        continue-on-error: true
+        if: steps.check_linux_arm64_sig.outputs.sig_exists == 'true'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
@@ -569,7 +626,7 @@ jobs:
           asset_content_type: text/plain
 
       - name: Save Linux ARM64 signature as artifact
-        continue-on-error: true
+        if: steps.check_linux_arm64_sig.outputs.sig_exists == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: linux-arm64-sig

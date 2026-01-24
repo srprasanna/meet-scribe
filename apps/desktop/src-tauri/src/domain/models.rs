@@ -275,3 +275,29 @@ impl ModelOverride {
         self
     }
 }
+
+/// Search result for transcripts with meeting context
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptSearchResult {
+    pub transcript: Transcript,
+    pub meeting_title: Option<String>,
+    pub meeting_platform: String,
+    pub rank: f32, // BM25 relevance score from FTS5
+}
+
+/// Search result for insights with meeting context
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InsightSearchResult {
+    pub insight: Insight,
+    pub meeting_title: Option<String>,
+    pub meeting_platform: String,
+    pub rank: f32, // BM25 relevance score from FTS5
+}
+
+/// Combined search results across all searchable entities
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchResults {
+    pub transcripts: Vec<TranscriptSearchResult>,
+    pub insights: Vec<InsightSearchResult>,
+    pub meetings: Vec<Meeting>,
+}

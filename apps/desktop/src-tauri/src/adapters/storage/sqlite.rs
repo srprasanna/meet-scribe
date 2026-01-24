@@ -2,7 +2,8 @@
 ///
 /// Implements StoragePort for SQLite database operations.
 use crate::domain::models::{
-    Insight, InsightType, Meeting, Participant, Platform, ServiceConfig, ServiceType, Transcript,
+    Insight, InsightSearchResult, InsightType, Meeting, Participant, Platform, SearchResults,
+    ServiceConfig, ServiceType, Transcript, TranscriptSearchResult,
 };
 use crate::error::{AppError, Result};
 use crate::ports::storage::StoragePort;
@@ -47,6 +48,7 @@ impl SqliteStorage {
             M::up(include_str!(
                 "../../../migrations/005_add_speaker_label_to_transcripts.sql"
             )),
+            M::up(include_str!("../../../migrations/006_add_fts5_search.sql")),
         ]);
 
         let mut conn = self.conn.lock().unwrap();
@@ -565,5 +567,208 @@ impl StoragePort for SqliteStorage {
         }
 
         Ok(configs)
+    }
+
+    /// Search across all searchable entities using FTS5
+    async fn search_all(&self, query: &str, limit: Option<i32>) -> Result<SearchResults> {
+        let search_limit = limit.unwrap_or(50);
+
+        // Run all searches concurrently (note: shared DB mutex will serialize actual execution)
+        let (transcripts, insights, meetings) = tokio::try_join!(
+            self.search_transcripts(query, Some(search_limit)),
+            self.search_insights(query, Some(search_limit)),
+            self.search_meetings(query, Some(search_limit))
+        )?;
+
+        Ok(SearchResults {
+            transcripts,
+            insights,
+            meetings,
+        })
+    }
+
+    /// Search transcripts using FTS5
+    async fn search_transcripts(
+        &self,
+        query: &str,
+        limit: Option<i32>,
+    ) -> Result<Vec<TranscriptSearchResult>> {
+        // Validate query length
+        if query.len() > 1000 {
+            return Err(AppError::InvalidInput("Search query too long".to_string()));
+        }
+
+        let search_limit = limit.unwrap_or(50);
+        let conn = self.conn.lock().unwrap();
+
+        let sql = r#"
+            SELECT
+                t.id, t.meeting_id, t.participant_id, p.name as participant_name,
+                t.speaker_label, t.timestamp_ms, t.text, t.confidence, t.created_at,
+                m.title as meeting_title, m.platform as meeting_platform,
+                bm25(transcripts_fts) as rank
+            FROM transcripts_fts
+            INNER JOIN transcripts t ON transcripts_fts.rowid = t.id
+            INNER JOIN meetings m ON t.meeting_id = m.id
+            LEFT JOIN participants p ON t.participant_id = p.id
+            WHERE transcripts_fts MATCH ?1
+            ORDER BY rank
+            LIMIT ?2
+        "#;
+
+        let mut stmt = conn.prepare(sql)?;
+        let rows = stmt.query_map(params![query, search_limit], |row| {
+            let platform_str: String = row.get(10)?;
+            let platform = match platform_str.as_str() {
+                "teams" => Platform::Teams,
+                "zoom" => Platform::Zoom,
+                "meet" => Platform::Meet,
+                _ => Platform::Meet,
+            };
+
+            Ok(TranscriptSearchResult {
+                transcript: Transcript {
+                    id: Some(row.get(0)?),
+                    meeting_id: row.get(1)?,
+                    participant_id: row.get(2)?,
+                    participant_name: row.get(3)?,
+                    speaker_label: row.get(4)?,
+                    timestamp_ms: row.get(5)?,
+                    text: row.get(6)?,
+                    confidence: row.get(7)?,
+                    created_at: row.get(8)?,
+                },
+                meeting_title: row.get(9)?,
+                meeting_platform: platform.to_string(),
+                rank: row.get(11)?,
+            })
+        })?;
+
+        let mut results = Vec::new();
+        for result in rows {
+            results.push(result?);
+        }
+
+        Ok(results)
+    }
+
+    /// Search insights using FTS5
+    async fn search_insights(
+        &self,
+        query: &str,
+        limit: Option<i32>,
+    ) -> Result<Vec<InsightSearchResult>> {
+        // Validate query length
+        if query.len() > 1000 {
+            return Err(AppError::InvalidInput("Search query too long".to_string()));
+        }
+
+        let search_limit = limit.unwrap_or(50);
+        let conn = self.conn.lock().unwrap();
+
+        let sql = r#"
+            SELECT
+                i.id, i.meeting_id, i.type, i.content, i.metadata, i.created_at,
+                m.title as meeting_title, m.platform as meeting_platform,
+                bm25(insights_fts) as rank
+            FROM insights_fts
+            INNER JOIN insights i ON insights_fts.rowid = i.id
+            INNER JOIN meetings m ON i.meeting_id = m.id
+            WHERE insights_fts MATCH ?1
+            ORDER BY rank
+            LIMIT ?2
+        "#;
+
+        let mut stmt = conn.prepare(sql)?;
+        let rows = stmt.query_map(params![query, search_limit], |row| {
+            let type_str: String = row.get(2)?;
+            let insight_type = match type_str.as_str() {
+                "summary" => InsightType::Summary,
+                "action_item" => InsightType::ActionItem,
+                "key_point" => InsightType::KeyPoint,
+                "decision" => InsightType::Decision,
+                _ => InsightType::Summary,
+            };
+
+            let platform_str: String = row.get(7)?;
+            let platform = match platform_str.as_str() {
+                "teams" => Platform::Teams,
+                "zoom" => Platform::Zoom,
+                "meet" => Platform::Meet,
+                _ => Platform::Meet,
+            };
+
+            Ok(InsightSearchResult {
+                insight: Insight {
+                    id: Some(row.get(0)?),
+                    meeting_id: row.get(1)?,
+                    insight_type,
+                    content: row.get(3)?,
+                    metadata: row.get(4)?,
+                    created_at: row.get(5)?,
+                },
+                meeting_title: row.get(6)?,
+                meeting_platform: platform.to_string(),
+                rank: row.get(8)?,
+            })
+        })?;
+
+        let mut results = Vec::new();
+        for result in rows {
+            results.push(result?);
+        }
+
+        Ok(results)
+    }
+
+    /// Search meetings by title and platform using FTS5 (includes all meetings, even those without titles)
+    async fn search_meetings(&self, query: &str, limit: Option<i32>) -> Result<Vec<Meeting>> {
+        // Validate query length
+        if query.len() > 1000 {
+            return Err(AppError::InvalidInput("Search query too long".to_string()));
+        }
+
+        let search_limit = limit.unwrap_or(50);
+        let conn = self.conn.lock().unwrap();
+
+        let sql = r#"
+            SELECT
+                m.id, m.platform, m.title, m.start_time, m.end_time,
+                m.participant_count, m.audio_file_path, m.created_at
+            FROM meetings_fts
+            INNER JOIN meetings m ON meetings_fts.rowid = m.id
+            WHERE meetings_fts MATCH ?1
+            ORDER BY bm25(meetings_fts)
+            LIMIT ?2
+        "#;
+
+        let mut stmt = conn.prepare(sql)?;
+        let rows = stmt.query_map(params![query, search_limit], |row| {
+            let platform_str: String = row.get(1)?;
+            let platform = match platform_str.as_str() {
+                "teams" => Platform::Teams,
+                "zoom" => Platform::Zoom,
+                "meet" => Platform::Meet,
+                _ => Platform::Meet,
+            };
+
+            Ok(Meeting {
+                id: Some(row.get(0)?),
+                platform,
+                title: row.get(2)?,
+                start_time: row.get(3)?,
+                end_time: row.get(4)?,
+                participant_count: row.get(5)?,
+                audio_file_path: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })?;
+
+        let mut results = Vec::new();
+        for result in rows {
+            results.push(result?);
+        }
+
+        Ok(results)
     }
 }
