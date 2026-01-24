@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 interface Transcript {
@@ -64,6 +64,7 @@ export function SearchBar({ onMeetingSelect }: SearchBarProps) {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"all" | "transcripts" | "insights" | "meetings">("all");
   const [isOpen, setIsOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Debounced search function
   useEffect(() => {
@@ -95,6 +96,19 @@ export function SearchBar({ onMeetingSelect }: SearchBarProps) {
     return () => clearTimeout(timeoutId);
   }, [query]);
 
+  // Global keyboard shortcut: Ctrl+K to focus search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   const formatTimestamp = (ms: number): string => {
     const secs = Math.floor(ms / 1000);
     const mins = Math.floor(secs / 60);
@@ -120,6 +134,7 @@ export function SearchBar({ onMeetingSelect }: SearchBarProps) {
       {/* Search Input */}
       <div style={{ position: "relative" }}>
         <input
+          ref={inputRef}
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}

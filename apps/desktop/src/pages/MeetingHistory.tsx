@@ -1493,7 +1493,7 @@ function MeetingHistory() {
                     <div style={{ fontSize: "12px", color: "#555", lineHeight: "1.6" }}>
                       {speaker.sample_transcripts.map((text, idx) => (
                         <div
-                          key={idx}
+                          key={`${speaker.speaker_label}-sample-${idx}-${text.substring(0, 30)}`}
                           style={{
                             marginBottom: "4px",
                             paddingLeft: "8px",
