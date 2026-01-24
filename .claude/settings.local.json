@@ -14,7 +14,8 @@
       "Bash(chmod:*)",
       "Bash(npm run detect-target:*)",
       "Bash(node -p:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(npx tsc:*)"
     ],
     "deny": [],
     "ask": []

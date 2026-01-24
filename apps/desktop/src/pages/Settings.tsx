@@ -682,11 +682,9 @@ function Settings() {
               ) : otherActiveProvider ? (
                 <Text color="orange.700">
                   ⚠️{" "}
-                  {
-                    (serviceType === "asr" ? ASR_PROVIDERS : LLM_PROVIDERS)[
-                      otherActiveProvider as keyof typeof ASR_PROVIDERS
-                    ]?.name
-                  }{" "}
+                  {serviceType === "asr"
+                    ? ASR_PROVIDERS[otherActiveProvider as keyof typeof ASR_PROVIDERS]?.name
+                    : LLM_PROVIDERS[otherActiveProvider as keyof typeof LLM_PROVIDERS]?.name}{" "}
                   is currently active. Deactivate it first to enable this service.
                 </Text>
               ) : (
