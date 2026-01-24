@@ -451,6 +451,11 @@ function Settings() {
     const isLoading = loading[`${serviceType}_${provider}`] || false;
     const hasModelChanged = modelChanged[provider] || false;
 
+    // Check if another provider of the same type is currently active
+    const otherActiveProvider = Object.entries(configs).find(
+      ([p, c]) => p !== provider && c?.is_active
+    )?.[0];
+
     // Get saved model from config
     let savedModel = "";
     if (config?.settings) {
@@ -466,10 +471,11 @@ function Settings() {
       <Box
         key={provider}
         borderWidth={isActive ? "2px" : "1px"}
-        borderColor={isActive ? "green.500" : "gray.200"}
-        bg={isActive ? "green.50" : "white"}
+        borderColor={isActive ? "green.500" : otherActiveProvider ? "gray.300" : "gray.200"}
+        bg={isActive ? "green.50" : otherActiveProvider ? "gray.50" : "white"}
         borderRadius="md"
         p={6}
+        opacity={otherActiveProvider && !isActive ? 0.6 : 1}
       >
         <VStack align="stretch" gap={4}>
           {/* Header */}
@@ -485,8 +491,14 @@ function Settings() {
                 <HStack gap={2}>
                   <Switch.Root
                     checked={isActive}
-                    onCheckedChange={(details: { checked: boolean }) => handleToggleService(serviceType, provider, details.checked)}
-                    disabled={loading[`activate_${serviceType}_${provider}`] || loading[`deactivate_${serviceType}_${provider}`]}
+                    onCheckedChange={(details: { checked: boolean }) =>
+                      handleToggleService(serviceType, provider, details.checked)
+                    }
+                    disabled={
+                      loading[`activate_${serviceType}_${provider}`] ||
+                      loading[`deactivate_${serviceType}_${provider}`] ||
+                      (!isActive && !!otherActiveProvider)
+                    }
                     colorPalette="blue"
                     size="md"
                   >
@@ -666,6 +678,16 @@ function Settings() {
                 <Text color="blue.700" fontWeight="bold">
                   ✓ This service is currently active and will be used for all{" "}
                   {serviceType === "asr" ? "transcriptions" : "insights"}
+                </Text>
+              ) : otherActiveProvider ? (
+                <Text color="orange.700">
+                  ⚠️{" "}
+                  {
+                    (serviceType === "asr" ? ASR_PROVIDERS : LLM_PROVIDERS)[
+                      otherActiveProvider as keyof typeof ASR_PROVIDERS
+                    ]?.name
+                  }{" "}
+                  is currently active. Deactivate it first to enable this service.
                 </Text>
               ) : (
                 <Text color="gray.600">
