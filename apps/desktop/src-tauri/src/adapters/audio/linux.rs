@@ -589,6 +589,12 @@ impl AudioCapturePort for PulseAudioCapture {
         // For Linux, dual capture is not yet fully implemented
         // For now, we prioritize the speaker device (loopback) if specified,
         // otherwise fall back to the microphone
+        log::info!(
+            "Linux dual capture: using single device mode (speaker: {:?}, mic: {:?})",
+            speaker_device,
+            microphone_device
+        );
+
         let device = speaker_device.or(microphone_device);
 
         if device.is_none() {
@@ -596,12 +602,6 @@ impl AudioCapturePort for PulseAudioCapture {
                 "At least one device (speaker or microphone) must be specified".to_string(),
             ));
         }
-
-        log::info!(
-            "Linux dual capture: using single device mode (speaker: {:?}, mic: {:?})",
-            speaker_device,
-            microphone_device
-        );
 
         // TODO: Implement true dual capture with mixing for Linux
         // For now, use single device capture
