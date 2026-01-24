@@ -122,25 +122,30 @@ jobs:
 
             **Linux:**
             - x64: `meet-scribe_${{ steps.get_version.outputs.version }}_amd64.deb` or `meet-scribe_${{ steps.get_version.outputs.version }}_amd64.AppImage`
-            - ARM64: `meet-scribe_${{ steps.get_version.outputs.version }}_arm64.deb` or `meet-scribe_${{ steps.get_version.outputs.version }}_arm64.AppImage`
+            - ARM64: `meet-scribe_${{ steps.get_version.outputs.version }}_arm64.deb`
 
             ### Installation
 
             **Windows:**
-            1. Download the `.msi` installer
+            1. Download the `.msi` installer (x64 or ARM64)
             2. Double-click to install
             3. Follow the installation wizard
 
-            **Linux (Debian/Ubuntu):**
+            **Linux x64 (Debian/Ubuntu):**
             ```bash
+            # Option 1: Install with dpkg
             sudo dpkg -i meet-scribe_${{ steps.get_version.outputs.version }}_amd64.deb
-            ```
 
-            **Linux (AppImage):**
-            ```bash
+            # Option 2: Run AppImage (portable)
             chmod +x meet-scribe_${{ steps.get_version.outputs.version }}_amd64.AppImage
             ./meet-scribe_${{ steps.get_version.outputs.version }}_amd64.AppImage
             ```
+
+            **Linux ARM64 (Debian/Ubuntu):**
+            ```bash
+            sudo dpkg -i meet-scribe_${{ steps.get_version.outputs.version }}_arm64.deb
+            ```
+            *Note: ARM64 Linux builds are .deb only (no AppImage available)*
 
             ### Changes
             See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
@@ -569,7 +574,8 @@ jobs:
           PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig
         run: |
           cd apps/desktop
-          npm run tauri build -- --target aarch64-unknown-linux-gnu
+          # Only build .deb for ARM64 - AppImage cross-compilation is problematic due to sysroot path issues
+          npm run tauri build -- --target aarch64-unknown-linux-gnu --bundles deb
 
       - name: List build artifacts
         run: |
@@ -591,47 +597,6 @@ jobs:
           asset_path: apps/desktop/src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/deb/meet-scribe_${{ needs.prepare-release.outputs.version }}_arm64.deb
           asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_arm64.deb
           asset_content_type: application/vnd.debian.binary-package
-
-      - name: Upload Linux ARM64 AppImage
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
-        with:
-          upload_url: ${{ needs.prepare-release.outputs.upload_url }}
-          asset_path: apps/desktop/src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_aarch64.AppImage
-          asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_arm64.AppImage
-          asset_content_type: application/octet-stream
-
-      - name: Check if Linux ARM64 signature was created
-        id: check_linux_arm64_sig
-        run: |
-          SIG_PATH="apps/desktop/src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_aarch64.AppImage.sig"
-          if [ -f "$SIG_PATH" ]; then
-            echo "Linux ARM64 signature file found: $SIG_PATH"
-            echo "sig_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "Linux ARM64 signature file NOT found: $SIG_PATH"
-            echo "sig_exists=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Upload Linux ARM64 AppImage Signature
-        if: steps.check_linux_arm64_sig.outputs.sig_exists == 'true'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
-        with:
-          upload_url: ${{ needs.prepare-release.outputs.upload_url }}
-          asset_path: apps/desktop/src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_aarch64.AppImage.sig
-          asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_arm64.AppImage.sig
-          asset_content_type: text/plain
-
-      - name: Save Linux ARM64 signature as artifact
-        if: steps.check_linux_arm64_sig.outputs.sig_exists == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-arm64-sig
-          path: apps/desktop/src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_aarch64.AppImage.sig
-          retention-days: 1
 
   # Generate and upload updater manifest
   create-updater-manifest:
@@ -661,13 +626,6 @@ jobs:
           name: windows-arm64-sig
           path: ./sigs
 
-      - name: Download Linux ARM64 signature
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: linux-arm64-sig
-          path: ./sigs
-
       - name: Generate and upload latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
@@ -680,7 +638,6 @@ jobs:
           WINDOWS_SIG=""
           LINUX_SIG=""
           WINDOWS_ARM64_SIG=""
-          LINUX_ARM64_SIG=""
 
           if [ -f "./sigs/meet-scribe_${VERSION}_x64_en-US.msi.sig" ]; then
             WINDOWS_SIG=$(cat "./sigs/meet-scribe_${VERSION}_x64_en-US.msi.sig")
@@ -703,14 +660,8 @@ jobs:
             echo "No Windows ARM64 signature found (signing may not be configured)"
           fi
 
-          if [ -f "./sigs/meet-scribe_${VERSION}_arm64.AppImage.sig" ]; then
-            LINUX_ARM64_SIG=$(cat "./sigs/meet-scribe_${VERSION}_arm64.AppImage.sig")
-            echo "Found Linux ARM64 signature"
-          else
-            echo "No Linux ARM64 signature found (signing may not be configured)"
-          fi
-
           # Create the updater manifest JSON
+          # Note: Linux ARM64 is excluded because .deb files are not supported by Tauri updater
           cat > latest.json << EOF
           {
             "version": "$TAG",
@@ -728,10 +679,6 @@ jobs:
               "windows-aarch64": {
                 "signature": "$WINDOWS_ARM64_SIG",
                 "url": "https://github.com/$REPO/releases/download/$TAG/meet-scribe_${VERSION}_arm64_en-US.msi"
-              },
-              "linux-aarch64": {
-                "signature": "$LINUX_ARM64_SIG",
-                "url": "https://github.com/$REPO/releases/download/$TAG/meet-scribe_${VERSION}_arm64.AppImage"
               }
             }
           }
