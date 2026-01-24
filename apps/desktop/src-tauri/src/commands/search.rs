@@ -75,7 +75,7 @@ pub async fn search_insights(
         .map_err(|e| format!("Insight search failed: {}", e))
 }
 
-/// Search only meeting titles
+/// Search meetings by title and platform (includes all meetings, even those without titles)
 #[tauri::command]
 pub async fn search_meetings(
     state: tauri::State<'_, AppState>,

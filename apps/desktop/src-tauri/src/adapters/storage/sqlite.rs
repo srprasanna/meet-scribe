@@ -573,10 +573,12 @@ impl StoragePort for SqliteStorage {
     async fn search_all(&self, query: &str, limit: Option<i32>) -> Result<SearchResults> {
         let search_limit = limit.unwrap_or(50);
 
-        // Run all searches in parallel
-        let transcripts = self.search_transcripts(query, Some(search_limit)).await?;
-        let insights = self.search_insights(query, Some(search_limit)).await?;
-        let meetings = self.search_meetings(query, Some(search_limit)).await?;
+        // Run all searches concurrently (note: shared DB mutex will serialize actual execution)
+        let (transcripts, insights, meetings) = tokio::try_join!(
+            self.search_transcripts(query, Some(search_limit)),
+            self.search_insights(query, Some(search_limit)),
+            self.search_meetings(query, Some(search_limit))
+        )?;
 
         Ok(SearchResults {
             transcripts,
@@ -615,7 +617,7 @@ impl StoragePort for SqliteStorage {
         "#;
 
         let mut stmt = conn.prepare(sql)?;
-        let rows = stmt.query_map([query, &search_limit.to_string()], |row| {
+        let rows = stmt.query_map(params![query, search_limit], |row| {
             let platform_str: String = row.get(10)?;
             let platform = match platform_str.as_str() {
                 "teams" => Platform::Teams,
@@ -678,7 +680,7 @@ impl StoragePort for SqliteStorage {
         "#;
 
         let mut stmt = conn.prepare(sql)?;
-        let rows = stmt.query_map([query, &search_limit.to_string()], |row| {
+        let rows = stmt.query_map(params![query, search_limit], |row| {
             let type_str: String = row.get(2)?;
             let insight_type = match type_str.as_str() {
                 "summary" => InsightType::Summary,
@@ -719,7 +721,7 @@ impl StoragePort for SqliteStorage {
         Ok(results)
     }
 
-    /// Search meeting titles using FTS5
+    /// Search meetings by title and platform using FTS5 (includes all meetings, even those without titles)
     async fn search_meetings(&self, query: &str, limit: Option<i32>) -> Result<Vec<Meeting>> {
         // Validate query length
         if query.len() > 1000 {
@@ -741,7 +743,7 @@ impl StoragePort for SqliteStorage {
         "#;
 
         let mut stmt = conn.prepare(sql)?;
-        let rows = stmt.query_map([query, &search_limit.to_string()], |row| {
+        let rows = stmt.query_map(params![query, search_limit], |row| {
             let platform_str: String = row.get(1)?;
             let platform = match platform_str.as_str() {
                 "teams" => Platform::Teams,

@@ -68,6 +68,7 @@ function MeetingHistory() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
   const [transcriptionAvailable, setTranscriptionAvailable] = useState<boolean>(false);
   const [transcribingMeetingId, setTranscribingMeetingId] = useState<number | null>(null);
@@ -210,6 +211,7 @@ function MeetingHistory() {
 
     try {
       setError(null);
+      setSuccessMessage(null);
       // Delete existing transcripts
       await deleteTranscripts(meetingId);
       // Clear from state
@@ -240,6 +242,7 @@ function MeetingHistory() {
 
     try {
       setError(null);
+      setSuccessMessage(null);
       // Delete existing insights
       await deleteMeetingInsights(meetingId);
       setInsights((prev) => ({ ...prev, [meetingId]: [] }));
@@ -259,6 +262,7 @@ function MeetingHistory() {
 
     try {
       setError(null);
+      setSuccessMessage(null);
       setGeneratingInsights(meetingId);
 
       const response = await generateMeetingInsights({
@@ -282,6 +286,7 @@ function MeetingHistory() {
 
     try {
       setError(null);
+      setSuccessMessage(null);
       await updateInsight(insightId, content);
 
       // Update local state
@@ -304,6 +309,7 @@ function MeetingHistory() {
   const loadMeetings = async () => {
     setLoading(true);
     setError(null);
+    setSuccessMessage(null);
 
     try {
       const history = await invoke<Meeting[]>("get_meeting_history", {
@@ -341,6 +347,7 @@ function MeetingHistory() {
 
     try {
       setError(null);
+      setSuccessMessage(null);
       await startTranscription(meetingId);
       setTranscribingMeetingId(meetingId);
     } catch (err) {
@@ -376,6 +383,9 @@ function MeetingHistory() {
     setShowExportMenu(null);
 
     try {
+      setError(null);
+      setSuccessMessage(null);
+
       const result = await invoke<{ file_path: string; format: string; size_bytes: number }>(
         'export_meeting',
         {
@@ -389,7 +399,7 @@ function MeetingHistory() {
       );
 
       // Show success message
-      alert(`Successfully exported to ${result.file_path}\nSize: ${(result.size_bytes / 1024).toFixed(2)} KB`);
+      setSuccessMessage(`Successfully exported to ${result.file_path} (${(result.size_bytes / 1024).toFixed(2)} KB)`);
     } catch (err) {
       setError(`Failed to export meeting: ${err}`);
       console.error(err);
@@ -525,6 +535,21 @@ function MeetingHistory() {
           }}
         >
           {error}
+        </div>
+      )}
+
+      {successMessage && (
+        <div
+          style={{
+            padding: "12px",
+            background: "#e6f7ed",
+            border: "1px solid #9ddcb3",
+            borderRadius: "6px",
+            marginBottom: "20px",
+            color: "#1e7e34",
+          }}
+        >
+          {successMessage}
         </div>
       )}
 

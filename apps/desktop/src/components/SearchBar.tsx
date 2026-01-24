@@ -261,9 +261,9 @@ export function SearchBar({ onMeetingSelect }: SearchBarProps) {
           <div style={{ maxHeight: "400px", overflowY: "auto" }}>
             {/* Transcripts */}
             {(activeTab === "all" || activeTab === "transcripts") &&
-              results.transcripts.map((result, idx) => (
+              results.transcripts.map((result) => (
                 <div
-                  key={`transcript-${idx}`}
+                  key={`transcript-${result.transcript.id}`}
                   onClick={() => {
                     onMeetingSelect?.(result.transcript.meeting_id);
                     setIsOpen(false);
@@ -302,9 +302,9 @@ export function SearchBar({ onMeetingSelect }: SearchBarProps) {
 
             {/* Insights */}
             {(activeTab === "all" || activeTab === "insights") &&
-              results.insights.map((result, idx) => (
+              results.insights.map((result) => (
                 <div
-                  key={`insight-${idx}`}
+                  key={`insight-${result.insight.id}`}
                   onClick={() => {
                     onMeetingSelect?.(result.insight.meeting_id);
                     setIsOpen(false);
@@ -347,9 +347,9 @@ export function SearchBar({ onMeetingSelect }: SearchBarProps) {
 
             {/* Meetings */}
             {(activeTab === "all" || activeTab === "meetings") &&
-              results.meetings.map((meeting, idx) => (
+              results.meetings.map((meeting) => (
                 <div
-                  key={`meeting-${idx}`}
+                  key={`meeting-${meeting.id}`}
                   onClick={() => {
                     onMeetingSelect?.(meeting.id);
                     setIsOpen(false);
