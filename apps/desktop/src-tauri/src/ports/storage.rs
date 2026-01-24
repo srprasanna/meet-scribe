@@ -2,7 +2,10 @@
 ///
 /// Defines the interface for database operations.
 /// Implementation: SQLite adapter
-use crate::domain::models::{Insight, Meeting, Participant, ServiceConfig, Transcript};
+use crate::domain::models::{
+    Insight, InsightSearchResult, Meeting, Participant, SearchResults, ServiceConfig, Transcript,
+    TranscriptSearchResult,
+};
 use crate::error::Result;
 use async_trait::async_trait;
 
@@ -91,4 +94,25 @@ pub trait StoragePort: Send + Sync {
 
     /// List all service configurations
     async fn list_service_configs(&self) -> Result<Vec<ServiceConfig>>;
+
+    // Search operations (FTS5 full-text search)
+    /// Search across all searchable entities (transcripts, insights, meetings)
+    async fn search_all(&self, query: &str, limit: Option<i32>) -> Result<SearchResults>;
+
+    /// Search transcripts with FTS5
+    async fn search_transcripts(
+        &self,
+        query: &str,
+        limit: Option<i32>,
+    ) -> Result<Vec<TranscriptSearchResult>>;
+
+    /// Search insights with FTS5
+    async fn search_insights(
+        &self,
+        query: &str,
+        limit: Option<i32>,
+    ) -> Result<Vec<InsightSearchResult>>;
+
+    /// Search meeting titles with FTS5
+    async fn search_meetings(&self, query: &str, limit: Option<i32>) -> Result<Vec<Meeting>>;
 }

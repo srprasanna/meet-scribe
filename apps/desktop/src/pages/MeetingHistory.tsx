@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { MarkdownContent } from "../components/MarkdownContent";
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { AudioPlayer } from "../components/AudioPlayer";
+import { SearchBar } from "../components/SearchBar";
 import {
   startTranscription,
   getTranscriptionStatus,
@@ -110,6 +111,10 @@ function MeetingHistory() {
     open: boolean;
     speakerLabel: string | null;
   }>({ open: false, speakerLabel: null });
+
+  // Export state
+  const [exportingMeetingId, setExportingMeetingId] = useState<number | null>(null);
+  const [showExportMenu, setShowExportMenu] = useState<number | null>(null);
 
   useEffect(() => {
     loadMeetings();
@@ -366,6 +371,33 @@ function MeetingHistory() {
     }
   };
 
+  const handleExportMeeting = async (meetingId: number, format: 'markdown' | 'json') => {
+    setExportingMeetingId(meetingId);
+    setShowExportMenu(null);
+
+    try {
+      const result = await invoke<{ file_path: string; format: string; size_bytes: number }>(
+        'export_meeting',
+        {
+          request: {
+            meeting_id: meetingId,
+            format,
+            include_insights: true,
+            include_participants: true,
+          },
+        }
+      );
+
+      // Show success message
+      alert(`Successfully exported to ${result.file_path}\nSize: ${(result.size_bytes / 1024).toFixed(2)} KB`);
+    } catch (err) {
+      setError(`Failed to export meeting: ${err}`);
+      console.error(err);
+    } finally {
+      setExportingMeetingId(null);
+    }
+  };
+
   const formatDate = (timestamp: number): string => {
     return new Date(timestamp * 1000).toLocaleString();
   };
@@ -454,8 +486,16 @@ function MeetingHistory() {
 
   return (
     <div style={{ padding: "20px", maxWidth: "1200px", margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-        <h1 style={{ margin: 0 }}>Meeting History</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", gap: "20px" }}>
+        <h1 style={{ margin: 0, flexShrink: 0 }}>Meeting History</h1>
+        <SearchBar
+          onMeetingSelect={(meetingId) => {
+            const meeting = meetings.find((m) => m.id === meetingId);
+            if (meeting) {
+              setSelectedMeeting(meeting);
+            }
+          }}
+        />
         <button
           onClick={loadMeetings}
           style={{
@@ -466,6 +506,7 @@ function MeetingHistory() {
             borderRadius: "6px",
             cursor: "pointer",
             fontSize: "14px",
+            flexShrink: 0,
           }}
         >
           🔄 Refresh
@@ -641,6 +682,93 @@ function MeetingHistory() {
                     >
                       View Details
                     </button>
+                    <div style={{ position: "relative" }}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowExportMenu(showExportMenu === meeting.id ? null : meeting.id);
+                        }}
+                        disabled={exportingMeetingId === meeting.id}
+                        style={{
+                          padding: "8px 16px",
+                          background: exportingMeetingId === meeting.id ? "#6c757d" : "#28a745",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "6px",
+                          cursor: exportingMeetingId === meeting.id ? "not-allowed" : "pointer",
+                          fontSize: "13px",
+                          opacity: exportingMeetingId === meeting.id ? 0.6 : 1,
+                        }}
+                      >
+                        {exportingMeetingId === meeting.id ? "⏳ Exporting..." : "📥 Export"}
+                      </button>
+                      {showExportMenu === meeting.id && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: "100%",
+                            right: 0,
+                            marginTop: "4px",
+                            background: "white",
+                            border: "1px solid #ddd",
+                            borderRadius: "6px",
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                            zIndex: 1000,
+                            minWidth: "140px",
+                          }}
+                        >
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleExportMeeting(meeting.id, 'markdown');
+                            }}
+                            style={{
+                              width: "100%",
+                              padding: "10px 16px",
+                              background: "transparent",
+                              border: "none",
+                              borderBottom: "1px solid #eee",
+                              cursor: "pointer",
+                              textAlign: "left",
+                              fontSize: "13px",
+                              color: "#333",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#f5f5f5";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "transparent";
+                            }}
+                          >
+                            📝 Markdown
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleExportMeeting(meeting.id, 'json');
+                            }}
+                            style={{
+                              width: "100%",
+                              padding: "10px 16px",
+                              background: "transparent",
+                              border: "none",
+                              cursor: "pointer",
+                              textAlign: "left",
+                              fontSize: "13px",
+                              color: "#333",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#f5f5f5";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "transparent";
+                            }}
+                          >
+                            🔗 JSON
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();

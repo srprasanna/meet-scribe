@@ -208,6 +208,13 @@ fn main() {
             commands::config::get_active_service_config,
             commands::config::list_service_configs,
             commands::config::activate_service,
+            // Export commands
+            commands::export::export_meeting,
+            // Search commands
+            commands::search::search_all,
+            commands::search::search_transcripts,
+            commands::search::search_insights,
+            commands::search::search_meetings,
             // Meeting commands
             commands::meeting::start_meeting,
             commands::meeting::stop_meeting,
