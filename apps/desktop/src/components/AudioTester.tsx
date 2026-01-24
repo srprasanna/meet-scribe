@@ -383,13 +383,14 @@ export function AudioTester() {
       )}
 
       {/* Important Note */}
-      <Box bg="green.50" borderWidth="1px" borderColor="green.200" borderRadius="md" p={4}>
-        <Text fontSize="sm" fontWeight="600" mb={2} color="green.900">
-          ✅ Dual-Capture Mixing Enabled
+      <Box bg="blue.50" borderWidth="1px" borderColor="blue.200" borderRadius="md" p={4}>
+        <Text fontSize="sm" fontWeight="600" mb={2} color="blue.900">
+          Dual-Capture Available (Windows Only)
         </Text>
-        <Text fontSize="sm" color="green.800">
-          This application now captures BOTH speaker output (what others say) AND microphone input (your voice)
-          during meetings. Use the tests above to verify both audio sources are working correctly before starting a meeting.
+        <Text fontSize="sm" color="blue.800">
+          On Windows, you can capture both speaker output (what others say) and microphone input (your voice)
+          simultaneously during meetings. Select and test both devices above to enable dual-capture mixing.
+          If only one device is selected, only that audio source will be recorded.
         </Text>
       </Box>
     </VStack>

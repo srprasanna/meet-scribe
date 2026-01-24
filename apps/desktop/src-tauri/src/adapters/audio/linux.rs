@@ -28,6 +28,8 @@ pub struct PulseAudioCapture {
     /// Audio format - placeholder until capture starts, then set to 44.1kHz stereo 16-bit
     format: AudioFormat,
     capture_handle: Option<tokio::task::JoinHandle<()>>,
+    /// Current audio level for visual feedback (0.0 to 1.0)
+    current_level: Arc<Mutex<f32>>,
 }
 
 impl PulseAudioCapture {
@@ -41,6 +43,7 @@ impl PulseAudioCapture {
             audio_buffer: Arc::new(Mutex::new(Vec::new())),
             format: AudioFormat::default(), // Placeholder, updated during start_capture()
             capture_handle: None,
+            current_level: Arc::new(Mutex::new(0.0)),
         }
     }
 
@@ -578,6 +581,33 @@ impl AudioCapturePort for PulseAudioCapture {
         Ok(())
     }
 
+    async fn start_dual_capture(
+        &mut self,
+        speaker_device: Option<String>,
+        microphone_device: Option<String>,
+    ) -> Result<()> {
+        // For Linux, dual capture is not yet fully implemented
+        // For now, we prioritize the speaker device (loopback) if specified,
+        // otherwise fall back to the microphone
+        let device = speaker_device.or(microphone_device);
+
+        if device.is_none() {
+            return Err(AppError::AudioCapture(
+                "At least one device (speaker or microphone) must be specified".to_string(),
+            ));
+        }
+
+        log::info!(
+            "Linux dual capture: using single device mode (speaker: {:?}, mic: {:?})",
+            speaker_device,
+            microphone_device
+        );
+
+        // TODO: Implement true dual capture with mixing for Linux
+        // For now, use single device capture
+        self.start_capture(device).await
+    }
+
     async fn stop_capture(&mut self) -> Result<()> {
         {
             let mut is_capturing = self.is_capturing.lock().unwrap();
@@ -617,6 +647,10 @@ impl AudioCapturePort for PulseAudioCapture {
 
     fn get_format(&self) -> AudioFormat {
         self.format.clone()
+    }
+
+    fn get_current_level(&self) -> f32 {
+        *self.current_level.lock().unwrap()
     }
 }
 

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type ChangeEvent } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 
 interface AudioPlayerProps {
@@ -80,7 +80,7 @@ export function AudioPlayer({ audioPath, meetingTitle }: AudioPlayerProps) {
     }
   };
 
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSeek = (e: ChangeEvent<HTMLInputElement>) => {
     const audio = audioRef.current;
     if (!audio) return;
 
@@ -89,7 +89,7 @@ export function AudioPlayer({ audioPath, meetingTitle }: AudioPlayerProps) {
     setCurrentTime(newTime);
   };
 
-  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleVolumeChange = (e: ChangeEvent<HTMLInputElement>) => {
     const audio = audioRef.current;
     if (!audio) return;
 

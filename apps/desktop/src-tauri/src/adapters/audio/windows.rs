@@ -963,17 +963,26 @@ impl AudioCapturePort for WasapiAudioCapture {
         }
 
         // Spawn speaker (loopback) capture thread (if speaker device specified)
+        // Use oneshot channels to signal initialization success/failure
         let speaker_buffer = Arc::new(Mutex::new(Vec::new()));
         let speaker_buffer_clone = Arc::clone(&speaker_buffer);
         let speaker_is_capturing = Arc::clone(&is_capturing_clone);
         let speaker_level = Arc::clone(&self.current_level);
         let speaker_format_info = Arc::clone(&format_info);
 
-        let speaker_handle = if let Some(spk_idx) = speaker_index {
-            Some(tokio::task::spawn_blocking(move || {
+        // Channel and handle for speaker initialization (only created if speaker is specified)
+        let (speaker_handle, speaker_init_rx) = if let Some(spk_idx) = speaker_index {
+            let (speaker_init_tx, speaker_init_rx) = tokio::sync::oneshot::channel::<Result<()>>();
+            let handle = tokio::task::spawn_blocking(move || {
+                // Helper to send error and cleanup
+                let send_error = |tx: tokio::sync::oneshot::Sender<Result<()>>, msg: String| {
+                    let _ = tx.send(Err(AppError::AudioCapture(msg)));
+                };
+
                 if let Err(e) = Self::init_com() {
                     log::error!("Failed to initialize COM for speaker capture: {}", e);
                     *speaker_is_capturing.lock().unwrap() = false;
+                    send_error(speaker_init_tx, format!("Failed to initialize COM: {}", e));
                     return;
                 }
 
@@ -982,6 +991,10 @@ impl AudioCapturePort for WasapiAudioCapture {
                     Err(e) => {
                         log::error!("Failed to get speaker device: {}", e);
                         *speaker_is_capturing.lock().unwrap() = false;
+                        send_error(
+                            speaker_init_tx,
+                            format!("Failed to get speaker device: {}", e),
+                        );
                         unsafe {
                             CoUninitialize();
                         }
@@ -995,6 +1008,10 @@ impl AudioCapturePort for WasapiAudioCapture {
                         Err(e) => {
                             log::error!("Failed to activate speaker audio client: {}", e);
                             *speaker_is_capturing.lock().unwrap() = false;
+                            send_error(
+                                speaker_init_tx,
+                                format!("Failed to activate speaker audio client: {}", e),
+                            );
                             unsafe {
                                 CoUninitialize();
                             }
@@ -1008,6 +1025,10 @@ impl AudioCapturePort for WasapiAudioCapture {
                         Err(e) => {
                             log::error!("Failed to initialize speaker audio client: {}", e);
                             *speaker_is_capturing.lock().unwrap() = false;
+                            send_error(
+                                speaker_init_tx,
+                                format!("Failed to initialize speaker audio client: {}", e),
+                            );
                             unsafe {
                                 CoUninitialize();
                             }
@@ -1021,6 +1042,10 @@ impl AudioCapturePort for WasapiAudioCapture {
                         Err(e) => {
                             log::error!("Failed to get speaker capture client: {}", e);
                             *speaker_is_capturing.lock().unwrap() = false;
+                            send_error(
+                                speaker_init_tx,
+                                format!("Failed to get speaker capture client: {}", e),
+                            );
                             unsafe {
                                 CoUninitialize();
                             }
@@ -1046,6 +1071,9 @@ impl AudioCapturePort for WasapiAudioCapture {
                     bits_per_sample
                 );
 
+                // Signal successful initialization
+                let _ = speaker_init_tx.send(Ok(()));
+
                 Self::capture_loop(
                     audio_client,
                     capture_client,
@@ -1058,10 +1086,11 @@ impl AudioCapturePort for WasapiAudioCapture {
                 unsafe {
                     CoUninitialize();
                 }
-            }))
+            });
+            (Some(handle), Some(speaker_init_rx))
         } else {
             log::info!("Skipping speaker capture (no speaker device specified)");
-            None
+            (None, None)
         };
 
         // Spawn microphone capture thread (if microphone device specified)
@@ -1071,11 +1100,19 @@ impl AudioCapturePort for WasapiAudioCapture {
         let format_info_clone2 = Arc::clone(&format_info);
         let mic_level = Arc::clone(&self.current_level);
 
-        let mic_handle = if let Some(mic_idx) = microphone_index {
-            Some(tokio::task::spawn_blocking(move || {
+        // Channel and handle for microphone initialization (only created if microphone is specified)
+        let (mic_handle, mic_init_rx) = if let Some(mic_idx) = microphone_index {
+            let (mic_init_tx, mic_init_rx) = tokio::sync::oneshot::channel::<Result<()>>();
+            let handle = tokio::task::spawn_blocking(move || {
+                // Helper to send error and cleanup
+                let send_error = |tx: tokio::sync::oneshot::Sender<Result<()>>, msg: String| {
+                    let _ = tx.send(Err(AppError::AudioCapture(msg)));
+                };
+
                 if let Err(e) = Self::init_com() {
                     log::error!("Failed to initialize COM for microphone capture: {}", e);
                     *mic_is_capturing.lock().unwrap() = false;
+                    send_error(mic_init_tx, format!("Failed to initialize COM: {}", e));
                     return;
                 }
 
@@ -1084,6 +1121,10 @@ impl AudioCapturePort for WasapiAudioCapture {
                     Err(e) => {
                         log::error!("Failed to get microphone device: {}", e);
                         *mic_is_capturing.lock().unwrap() = false;
+                        send_error(
+                            mic_init_tx,
+                            format!("Failed to get microphone device: {}", e),
+                        );
                         unsafe {
                             CoUninitialize();
                         }
@@ -1097,6 +1138,10 @@ impl AudioCapturePort for WasapiAudioCapture {
                         Err(e) => {
                             log::error!("Failed to activate microphone audio client: {}", e);
                             *mic_is_capturing.lock().unwrap() = false;
+                            send_error(
+                                mic_init_tx,
+                                format!("Failed to activate microphone audio client: {}", e),
+                            );
                             unsafe {
                                 CoUninitialize();
                             }
@@ -1110,6 +1155,10 @@ impl AudioCapturePort for WasapiAudioCapture {
                         Err(e) => {
                             log::error!("Failed to initialize microphone audio client: {}", e);
                             *mic_is_capturing.lock().unwrap() = false;
+                            send_error(
+                                mic_init_tx,
+                                format!("Failed to initialize microphone audio client: {}", e),
+                            );
                             unsafe {
                                 CoUninitialize();
                             }
@@ -1132,9 +1181,9 @@ impl AudioCapturePort for WasapiAudioCapture {
                         log::info!("Using microphone format as master (no speaker specified)");
                     } else {
                         log::info!(
-                        "Speaker format already set ({} Hz, {} ch), microphone format ignored ({} Hz, {} ch)",
-                        fmt.sample_rate, fmt.channels, sample_rate, channels
-                    );
+                            "Speaker format already set ({} Hz, {} ch), microphone format ignored ({} Hz, {} ch)",
+                            fmt.sample_rate, fmt.channels, sample_rate, channels
+                        );
                     }
                 }
 
@@ -1144,6 +1193,10 @@ impl AudioCapturePort for WasapiAudioCapture {
                         Err(e) => {
                             log::error!("Failed to get microphone capture client: {}", e);
                             *mic_is_capturing.lock().unwrap() = false;
+                            send_error(
+                                mic_init_tx,
+                                format!("Failed to get microphone capture client: {}", e),
+                            );
                             unsafe {
                                 CoUninitialize();
                             }
@@ -1158,6 +1211,9 @@ impl AudioCapturePort for WasapiAudioCapture {
                     bits_per_sample
                 );
 
+                // Signal successful initialization
+                let _ = mic_init_tx.send(Ok(()));
+
                 Self::capture_loop(
                     audio_client,
                     capture_client,
@@ -1170,25 +1226,78 @@ impl AudioCapturePort for WasapiAudioCapture {
                 unsafe {
                     CoUninitialize();
                 }
-            }))
+            });
+            (Some(handle), Some(mic_init_rx))
         } else {
             log::info!("Skipping microphone capture (no microphone device specified)");
-            None
+            (None, None)
         };
 
         self.capture_handle = speaker_handle;
         self.mic_capture_handle = mic_handle;
 
-        // Wait for format detection - capture threads need time to initialize and update format
-        // 200ms should be sufficient for WASAPI initialization
-        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        // Wait for initialization results from capture threads
+        // Check speaker initialization result if speaker was requested
+        if let Some(rx) = speaker_init_rx {
+            match rx.await {
+                Ok(Ok(())) => {
+                    log::info!("Speaker capture thread initialized successfully");
+                }
+                Ok(Err(e)) => {
+                    log::error!("Speaker capture initialization failed: {}", e);
+                    *self.is_capturing.lock().unwrap() = false;
+                    return Err(e);
+                }
+                Err(_) => {
+                    log::error!("Speaker capture thread terminated unexpectedly");
+                    *self.is_capturing.lock().unwrap() = false;
+                    return Err(AppError::AudioCapture(
+                        "Speaker capture thread terminated unexpectedly".to_string(),
+                    ));
+                }
+            }
+        }
+
+        // Check microphone initialization result if microphone was requested
+        if let Some(rx) = mic_init_rx {
+            match rx.await {
+                Ok(Ok(())) => {
+                    log::info!("Microphone capture thread initialized successfully");
+                }
+                Ok(Err(e)) => {
+                    log::error!("Microphone capture initialization failed: {}", e);
+                    *self.is_capturing.lock().unwrap() = false;
+                    return Err(e);
+                }
+                Err(_) => {
+                    log::error!("Microphone capture thread terminated unexpectedly");
+                    *self.is_capturing.lock().unwrap() = false;
+                    return Err(AppError::AudioCapture(
+                        "Microphone capture thread terminated unexpectedly".to_string(),
+                    ));
+                }
+            }
+        }
+
+        // Additional safety check - verify is_capturing is still true
+        if !*self.is_capturing.lock().unwrap() {
+            return Err(AppError::AudioCapture(
+                "Audio capture failed to start".to_string(),
+            ));
+        }
+
+        // Get the detected format
         self.format = format_info.lock().unwrap().clone();
 
-        // Warn if format is still at default - this indicates a bug
+        // Verify format was properly detected (not still at default)
         if self.format.sample_rate == 16000 && self.format.channels == 1 {
-            log::warn!(
-                "Format still at default after capture start! This may indicate initialization failed."
+            log::error!(
+                "Format still at default after capture start - initialization may have failed"
             );
+            *self.is_capturing.lock().unwrap() = false;
+            return Err(AppError::AudioCapture(
+                "Audio format detection failed - capture may not be working correctly".to_string(),
+            ));
         }
 
         // Spawn mixer thread to combine both audio streams

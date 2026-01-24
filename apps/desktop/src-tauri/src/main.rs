@@ -126,7 +126,9 @@ fn setup_tray_menu<R: Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<()> {
 
     let menu = Menu::with_items(app, &[&show_item, &hide_item, &quit_item])?;
 
-    let tray = app.tray_by_id("main").expect("Failed to get tray");
+    let tray = app
+        .tray_by_id("main")
+        .ok_or_else(|| tauri::Error::AssetNotFound("Tray icon 'main' not found".to_string()))?;
     tray.set_menu(Some(menu))?;
 
     tray.on_tray_icon_event(|tray, event| {
@@ -187,7 +189,9 @@ fn main() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 // Prevent window from closing, hide it instead
-                window.hide().unwrap();
+                if let Err(e) = window.hide() {
+                    log::error!("Failed to hide window: {}", e);
+                }
                 api.prevent_close();
             }
         })
