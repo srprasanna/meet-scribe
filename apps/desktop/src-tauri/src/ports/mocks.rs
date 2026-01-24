@@ -290,7 +290,7 @@ impl StoragePort for MockStorage {
                 TranscriptSearchResult {
                     transcript: t.clone(),
                     meeting_title: meeting.and_then(|m| m.title.clone()),
-                    meeting_platform: meeting.map(|m| m.platform.clone()).unwrap_or_default(),
+                    meeting_platform: meeting.map(|m| m.platform.to_string()).unwrap_or_default(),
                     rank: 1.0, // Mock rank
                 }
             })
@@ -320,7 +320,7 @@ impl StoragePort for MockStorage {
                 InsightSearchResult {
                     insight: i.clone(),
                     meeting_title: meeting.and_then(|m| m.title.clone()),
-                    meeting_platform: meeting.map(|m| m.platform.clone()).unwrap_or_default(),
+                    meeting_platform: meeting.map(|m| m.platform.to_string()).unwrap_or_default(),
                     rank: 1.0, // Mock rank
                 }
             })
@@ -344,7 +344,7 @@ impl StoragePort for MockStorage {
                     .as_ref()
                     .map(|t| t.to_lowercase().contains(&query_lower))
                     .unwrap_or(false)
-                    || m.platform.to_lowercase().contains(&query_lower)
+                    || m.platform.to_string().to_lowercase().contains(&query_lower)
             })
             .cloned()
             .collect();
