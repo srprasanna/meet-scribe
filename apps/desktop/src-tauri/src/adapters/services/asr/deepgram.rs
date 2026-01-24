@@ -34,6 +34,51 @@ impl DeepgramService {
         Self { client, api_key }
     }
 
+    /// Fetch available models from Deepgram API
+    /// Filters to only English-supporting models and excludes outdated models
+    pub async fn list_models(&self) -> Result<Vec<DeepgramModel>> {
+        log::info!("Fetching Deepgram models from API (English only, exclude outdated)");
+
+        let url = format!("{}/models?include_outdated=false", DEEPGRAM_API_BASE);
+
+        let response = self
+            .client
+            .get(&url)
+            .header("authorization", format!("Token {}", self.api_key))
+            .send()
+            .await
+            .map_err(|e| AppError::Transcription(format!("Failed to fetch models: {}", e)))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(AppError::Transcription(format!(
+                "Deepgram API error ({}): {}",
+                status, error_text
+            )));
+        }
+
+        let models_response: DeepgramModelsResponse = response.json().await.map_err(|e| {
+            AppError::Transcription(format!("Failed to parse models response: {}", e))
+        })?;
+
+        // Return only STT models (Speech-to-Text) that support English
+        Ok(models_response
+            .stt
+            .into_iter()
+            .filter(|model| {
+                model.languages.iter().any(|lang| {
+                    lang.starts_with("en")
+                        || lang == "en-US"
+                        || lang == "en-GB"
+                        || lang == "en-AU"
+                        || lang == "en-IN"
+                        || lang == "en-NZ"
+                })
+            })
+            .collect())
+    }
+
     /// Transcribe audio file with diarization
     async fn transcribe_with_diarization(
         &self,
@@ -414,6 +459,29 @@ impl TranscriptionServicePort for DeepgramService {
 
 // ===== API Response Types =====
 
+/// Response from /v1/models endpoint
+#[derive(Debug, Deserialize)]
+struct DeepgramModelsResponse {
+    stt: Vec<DeepgramModel>,
+    #[allow(dead_code)]
+    tts: Vec<serde_json::Value>, // TTS models - not used for transcription
+}
+
+/// Deepgram STT model information
+#[derive(Debug, Deserialize, Clone)]
+pub struct DeepgramModel {
+    pub name: String,
+    pub canonical_name: String,
+    pub architecture: String,
+    pub languages: Vec<String>,
+    pub version: String,
+    pub uuid: String,
+    pub batch: bool,
+    pub streaming: bool,
+    pub formatted_output: bool,
+}
+
+/// Response from /v1/listen endpoint
 #[derive(Debug, Deserialize)]
 struct DeepgramResponse {
     metadata: Metadata,

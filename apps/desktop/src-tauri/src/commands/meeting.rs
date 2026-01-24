@@ -47,6 +47,7 @@ pub struct AudioFormatInfo {
 /// Start a new meeting and begin audio capture
 #[tauri::command]
 pub async fn start_meeting(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     request: StartMeetingRequest,
 ) -> Result<i64, String> {
@@ -72,10 +73,12 @@ pub async fn start_meeting(
 
     // Start audio capture and wait for confirmation
     // This ensures we only store the meeting ID if audio capture actually started
-    // For now, we use the speaker device for capture (loopback mode on Windows)
-    // TODO: Use microphone_device for direct microphone input if needed
+    // Use dual-capture to capture both speaker output AND microphone input
     let mut audio_capture = state.audio_capture.lock().await;
-    match audio_capture.start_capture(request.speaker_device).await {
+    match audio_capture
+        .start_dual_capture(request.speaker_device, request.microphone_device)
+        .await
+    {
         Ok(_) => {
             log::info!(
                 "Audio capture started successfully for meeting {}",
@@ -84,6 +87,11 @@ pub async fn start_meeting(
 
             // Store current meeting ID only after successful audio capture
             *state.current_meeting_id.lock().await = Some(meeting_id);
+
+            // Update tray icon to show recording status
+            if let Some(tray) = app.tray_by_id("main") {
+                let _ = tray.set_tooltip(Some("Meet Scribe - Recording..."));
+            }
 
             Ok(meeting_id)
         }
@@ -115,6 +123,7 @@ pub async fn stop_meeting(
     // Stop audio capture and save audio file in background
     let audio_capture_arc = Arc::clone(&state.audio_capture);
     let storage_arc = Arc::clone(&state.storage);
+    let app_clone = app.clone();
 
     tokio::spawn(async move {
         // Get the audio buffer BEFORE releasing the mutex
@@ -137,7 +146,7 @@ pub async fn stop_meeting(
         match buffer_result {
             Ok(Some(buffer)) => {
                 // Get app data directory for secure storage
-                let app_data_dir = match app.path().app_data_dir() {
+                let app_data_dir = match app_clone.path().app_data_dir() {
                     Ok(dir) => dir,
                     Err(e) => {
                         log::error!("Failed to get app data directory: {}", e);
@@ -216,6 +225,11 @@ pub async fn stop_meeting(
         .update_meeting(&meeting)
         .await
         .map_err(|e| e.to_string())?;
+
+    // Update tray icon to show idle status
+    if let Some(tray) = app.tray_by_id("main") {
+        let _ = tray.set_tooltip(Some("Meet Scribe - Idle"));
+    }
 
     log::info!("Meeting {} stopped", meeting_id);
     Ok(())
@@ -401,4 +415,164 @@ pub async fn delete_meeting(
 
     log::info!("Deleted meeting: {}", meeting_id);
     Ok(())
+}
+
+/// Test speaker capture (loopback)
+///
+/// Starts capturing speaker output for testing purposes.
+/// Uses the speaker device index from list_speaker_devices.
+#[tauri::command]
+pub async fn test_speaker_capture(
+    state: tauri::State<'_, AppState>,
+    device_index: usize,
+) -> Result<(), String> {
+    log::info!("Testing speaker capture on device index: {}", device_index);
+
+    // Get device list to find the device name
+    let audio_capture = state.audio_capture.lock().await;
+    let devices = audio_capture
+        .list_speaker_devices()
+        .await
+        .map_err(|e| e.to_string())?;
+    drop(audio_capture);
+
+    if device_index >= devices.len() {
+        return Err(format!(
+            "Speaker device index {} out of range (total: {})",
+            device_index,
+            devices.len()
+        ));
+    }
+
+    let device_name = devices[device_index].clone();
+    log::info!("Starting speaker test with device: {}", device_name);
+
+    // Start capture on speaker device only (loopback mode)
+    let mut audio_capture = state.audio_capture.lock().await;
+    audio_capture
+        .start_capture(Some(device_name))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    log::info!("Speaker capture test started successfully");
+    Ok(())
+}
+
+/// Test microphone capture
+///
+/// Starts capturing microphone input for testing purposes.
+/// Uses the microphone device index from list_microphone_devices.
+#[tauri::command]
+pub async fn test_microphone_capture(
+    state: tauri::State<'_, AppState>,
+    device_index: usize,
+) -> Result<(), String> {
+    log::info!(
+        "Testing microphone capture on device index: {}",
+        device_index
+    );
+
+    // Get device list to find the device name
+    let audio_capture = state.audio_capture.lock().await;
+    let devices = audio_capture
+        .list_microphone_devices()
+        .await
+        .map_err(|e| e.to_string())?;
+    drop(audio_capture);
+
+    if device_index >= devices.len() {
+        return Err(format!(
+            "Microphone device index {} out of range (total: {})",
+            device_index,
+            devices.len()
+        ));
+    }
+
+    let device_name = devices[device_index].clone();
+    log::info!("Starting microphone test with device: {}", device_name);
+
+    // For microphone test, we need to use dual-capture with no speaker
+    // This will capture just the microphone
+    let mut audio_capture = state.audio_capture.lock().await;
+    audio_capture
+        .start_dual_capture(None, Some(device_name))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    log::info!("Microphone capture test started successfully");
+    Ok(())
+}
+
+/// Stop audio testing
+///
+/// Stops any ongoing audio capture test.
+#[tauri::command]
+pub async fn stop_audio_test(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    log::info!("Stopping audio test");
+
+    let mut audio_capture = state.audio_capture.lock().await;
+    audio_capture
+        .stop_capture()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    log::info!("Audio test stopped successfully");
+    Ok(())
+}
+/// Get current audio level (for testing UI meters)
+///
+/// Returns the current audio level as a percentage (0-100)
+#[tauri::command]
+pub async fn get_current_audio_level(state: tauri::State<'_, AppState>) -> Result<f32, String> {
+    let audio_capture = state.audio_capture.lock().await;
+
+    if !audio_capture.is_capturing() {
+        return Ok(0.0);
+    }
+
+    // Get the current level from the audio capture
+    let level = audio_capture.get_current_level();
+
+    // Convert to percentage (0-100) with some amplification for visibility
+    // RMS is typically quite small, so we amplify it
+    let percentage = (level * 300.0).min(100.0);
+
+    Ok(percentage)
+}
+
+/// Play a test tone through the specified speaker device
+///
+/// Generates and plays a 1-second test tone (440 Hz - musical note A)
+/// This allows users to verify their speaker is working and at the correct volume
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub async fn play_test_tone(device_index: usize) -> Result<(), String> {
+    use crate::adapters::audio::WasapiAudioCapture;
+
+    log::info!(
+        "Playing test tone on speaker device index: {}",
+        device_index
+    );
+
+    // Generate a 1-second test tone at 440 Hz (musical note A)
+    let sample_rate = 48000; // Standard audio sample rate
+    let duration = 1.0; // 1 second
+    let frequency = 440.0; // A4 note
+
+    let samples = WasapiAudioCapture::generate_test_tone(duration, sample_rate, frequency);
+
+    // Play the tone through the selected speaker
+    WasapiAudioCapture::play_audio(device_index, samples, sample_rate)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    log::info!("Test tone playback completed");
+    Ok(())
+}
+
+/// Play test tone - Linux placeholder
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub async fn play_test_tone(_device_index: usize) -> Result<(), String> {
+    Err("Test tone playback not yet implemented for this platform".to_string())
 }

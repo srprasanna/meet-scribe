@@ -109,8 +109,14 @@ jobs:
             ## Meet Scribe ${{ steps.get_version.outputs.version }}
 
             ### Downloads
-            - **Windows**: `meet-scribe_${{ steps.get_version.outputs.version }}_x64_en-US.msi`
-            - **Linux**: `meet-scribe_${{ steps.get_version.outputs.version }}_amd64.deb` or `meet-scribe_${{ steps.get_version.outputs.version }}_amd64.AppImage`
+
+            **Windows:**
+            - x64: `meet-scribe_${{ steps.get_version.outputs.version }}_x64_en-US.msi`
+            - ARM64: `meet-scribe_${{ steps.get_version.outputs.version }}_arm64_en-US.msi`
+
+            **Linux:**
+            - x64: `meet-scribe_${{ steps.get_version.outputs.version }}_amd64.deb` or `meet-scribe_${{ steps.get_version.outputs.version }}_amd64.AppImage`
+            - ARM64: `meet-scribe_${{ steps.get_version.outputs.version }}_arm64.deb` or `meet-scribe_${{ steps.get_version.outputs.version }}_arm64.AppImage`
 
             ### Installation
 
@@ -239,6 +245,85 @@ jobs:
           asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi
           asset_content_type: application/x-msi
 
+  # Build for Windows ARM64
+  build-windows-arm64:
+    needs: prepare-release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-pc-windows-msvc
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+          key: arm64
+
+      - name: Install dependencies
+        run: |
+          cd apps/desktop
+          npm ci
+
+      - name: Build frontend
+        run: |
+          cd apps/desktop
+          npm run build
+
+      - name: Build Tauri app (ARM64)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          cd apps/desktop
+          npm run tauri build -- --target aarch64-pc-windows-msvc
+
+      - name: List build artifacts
+        run: |
+          Get-ChildItem -Path apps/desktop/src-tauri/target/aarch64-pc-windows-msvc/release/bundle -Recurse | Select-Object FullName
+
+      - name: Upload Windows ARM64 MSI
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
+        with:
+          upload_url: ${{ needs.prepare-release.outputs.upload_url }}
+          asset_path: apps/desktop/src-tauri/target/aarch64-pc-windows-msvc/release/bundle/msi/meet-scribe_${{ needs.prepare-release.outputs.version }}_arm64_en-US.msi
+          asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_arm64_en-US.msi
+          asset_content_type: application/x-msi
+
+      - name: Upload Windows ARM64 MSI Signature
+        continue-on-error: true
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
+        with:
+          upload_url: ${{ needs.prepare-release.outputs.upload_url }}
+          asset_path: apps/desktop/src-tauri/target/aarch64-pc-windows-msvc/release/bundle/msi/meet-scribe_${{ needs.prepare-release.outputs.version }}_arm64_en-US.msi.sig
+          asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_arm64_en-US.msi.sig
+          asset_content_type: text/plain
+
+      - name: Save Windows ARM64 signature as artifact
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-arm64-sig
+          path: apps/desktop/src-tauri/target/aarch64-pc-windows-msvc/release/bundle/msi/meet-scribe_${{ needs.prepare-release.outputs.version }}_arm64_en-US.msi.sig
+          retention-days: 1
+
   # Build for Linux
   build-linux:
     needs: prepare-release
@@ -363,9 +448,137 @@ jobs:
           path: apps/desktop/src-tauri/target/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_amd64.AppImage.sig
           retention-days: 1
 
+  # Build for Linux ARM64
+  build-linux-arm64:
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+          key: arm64
+
+      - name: Install cross-compilation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Install ARM64 system dependencies
+        run: |
+          sudo dpkg --add-architecture arm64
+          sudo bash -c 'cat > /etc/apt/sources.list.d/arm64.list <<EOF
+          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ $(lsb_release -sc) main restricted universe multiverse
+          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ $(lsb_release -sc)-updates main restricted universe multiverse
+          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ $(lsb_release -sc)-security main restricted universe multiverse
+          EOF'
+          sudo apt-get update || true
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev:arm64 \
+            libssl-dev:arm64 \
+            libgtk-3-dev:arm64 \
+            libayatana-appindicator3-dev:arm64 \
+            librsvg2-dev:arm64 \
+            libpulse-dev:arm64 || echo "Some ARM64 packages may not be available"
+
+      - name: Configure cross-compilation
+        run: |
+          mkdir -p ~/.cargo
+          cat >> ~/.cargo/config.toml <<EOF
+          [target.aarch64-unknown-linux-gnu]
+          linker = "aarch64-linux-gnu-gcc"
+          EOF
+
+      - name: Install dependencies
+        run: |
+          cd apps/desktop
+          npm ci
+
+      - name: Build frontend
+        run: |
+          cd apps/desktop
+          npm run build
+
+      - name: Build Tauri app (ARM64)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          PKG_CONFIG_SYSROOT_DIR: /usr/aarch64-linux-gnu
+          PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig
+        run: |
+          cd apps/desktop
+          npm run tauri build -- --target aarch64-unknown-linux-gnu
+
+      - name: List build artifacts
+        run: |
+          echo "Checking ARM64 bundle directory..."
+          if [ -d "apps/desktop/src-tauri/target/aarch64-unknown-linux-gnu/release/bundle" ]; then
+            cd apps/desktop/src-tauri/target/aarch64-unknown-linux-gnu/release/bundle
+            ls -lR
+          else
+            echo "ARM64 bundle directory not found!"
+            ls -lR apps/desktop/src-tauri/target/aarch64-unknown-linux-gnu/ || echo "Target directory doesn't exist"
+          fi
+
+      - name: Upload Linux ARM64 DEB
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
+        with:
+          upload_url: ${{ needs.prepare-release.outputs.upload_url }}
+          asset_path: apps/desktop/src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/deb/meet-scribe_${{ needs.prepare-release.outputs.version }}_arm64.deb
+          asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_arm64.deb
+          asset_content_type: application/vnd.debian.binary-package
+
+      - name: Upload Linux ARM64 AppImage
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
+        with:
+          upload_url: ${{ needs.prepare-release.outputs.upload_url }}
+          asset_path: apps/desktop/src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_aarch64.AppImage
+          asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_arm64.AppImage
+          asset_content_type: application/octet-stream
+
+      - name: Upload Linux ARM64 AppImage Signature
+        continue-on-error: true
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
+        with:
+          upload_url: ${{ needs.prepare-release.outputs.upload_url }}
+          asset_path: apps/desktop/src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_aarch64.AppImage.sig
+          asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_arm64.AppImage.sig
+          asset_content_type: text/plain
+
+      - name: Save Linux ARM64 signature as artifact
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64-sig
+          path: apps/desktop/src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_aarch64.AppImage.sig
+          retention-days: 1
+
   # Generate and upload updater manifest
   create-updater-manifest:
-    needs: [prepare-release, build-windows, build-linux]
+    needs: [prepare-release, build-windows, build-windows-arm64, build-linux, build-linux-arm64]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -384,6 +597,20 @@ jobs:
           name: linux-sig
           path: ./sigs
 
+      - name: Download Windows ARM64 signature
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: windows-arm64-sig
+          path: ./sigs
+
+      - name: Download Linux ARM64 signature
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: linux-arm64-sig
+          path: ./sigs
+
       - name: Generate and upload latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
@@ -395,19 +622,35 @@ jobs:
           # Read signature files if they exist
           WINDOWS_SIG=""
           LINUX_SIG=""
+          WINDOWS_ARM64_SIG=""
+          LINUX_ARM64_SIG=""
 
           if [ -f "./sigs/meet-scribe_${VERSION}_x64_en-US.msi.sig" ]; then
             WINDOWS_SIG=$(cat "./sigs/meet-scribe_${VERSION}_x64_en-US.msi.sig")
-            echo "Found Windows signature"
+            echo "Found Windows x64 signature"
           else
-            echo "No Windows signature found (signing may not be configured)"
+            echo "No Windows x64 signature found (signing may not be configured)"
           fi
 
           if [ -f "./sigs/meet-scribe_${VERSION}_amd64.AppImage.sig" ]; then
             LINUX_SIG=$(cat "./sigs/meet-scribe_${VERSION}_amd64.AppImage.sig")
-            echo "Found Linux signature"
+            echo "Found Linux x64 signature"
           else
-            echo "No Linux signature found (signing may not be configured)"
+            echo "No Linux x64 signature found (signing may not be configured)"
+          fi
+
+          if [ -f "./sigs/meet-scribe_${VERSION}_arm64_en-US.msi.sig" ]; then
+            WINDOWS_ARM64_SIG=$(cat "./sigs/meet-scribe_${VERSION}_arm64_en-US.msi.sig")
+            echo "Found Windows ARM64 signature"
+          else
+            echo "No Windows ARM64 signature found (signing may not be configured)"
+          fi
+
+          if [ -f "./sigs/meet-scribe_${VERSION}_arm64.AppImage.sig" ]; then
+            LINUX_ARM64_SIG=$(cat "./sigs/meet-scribe_${VERSION}_arm64.AppImage.sig")
+            echo "Found Linux ARM64 signature"
+          else
+            echo "No Linux ARM64 signature found (signing may not be configured)"
           fi
 
           # Create the updater manifest JSON
@@ -424,6 +667,14 @@ jobs:
               "linux-x86_64": {
                 "signature": "$LINUX_SIG",
                 "url": "https://github.com/$REPO/releases/download/$TAG/meet-scribe_${VERSION}_amd64.AppImage"
+              },
+              "windows-aarch64": {
+                "signature": "$WINDOWS_ARM64_SIG",
+                "url": "https://github.com/$REPO/releases/download/$TAG/meet-scribe_${VERSION}_arm64_en-US.msi"
+              },
+              "linux-aarch64": {
+                "signature": "$LINUX_ARM64_SIG",
+                "url": "https://github.com/$REPO/releases/download/$TAG/meet-scribe_${VERSION}_arm64.AppImage"
               }
             }
           }

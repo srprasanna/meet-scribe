@@ -405,6 +405,15 @@ impl StoragePort for SqliteStorage {
         Ok(())
     }
 
+    async fn update_insight_content(&self, insight_id: i64, content: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE insights SET content = ?1 WHERE id = ?2",
+            params![content, insight_id],
+        )?;
+        Ok(())
+    }
+
     async fn delete_insights(&self, meeting_id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(

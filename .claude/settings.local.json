@@ -4,7 +4,16 @@
       "Bash(cargo build:*)",
       "Bash(npm run build)",
       "Bash(cargo check:*)",
-      "Bash(npm run check:*)"
+      "Bash(npm run check:*)",
+      "Bash(rustc --version --verbose:*)",
+      "Bash(rustup show:*)",
+      "Bash(rustup toolchain install:*)",
+      "Bash(git config:*)",
+      "Bash(cargo test:*)",
+      "Bash(python:*)",
+      "Bash(chmod:*)",
+      "Bash(npm run detect-target:*)",
+      "Bash(node -p:*)"
     ],
     "deny": [],
     "ask": []

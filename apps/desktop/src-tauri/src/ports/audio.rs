@@ -52,6 +52,15 @@ pub trait AudioCapturePort: Send + Sync {
     /// Returns immediately, audio is captured in background
     async fn start_capture(&mut self, device_name: Option<String>) -> Result<()>;
 
+    /// Starts dual-capture from both speaker and microphone devices
+    /// Captures audio from both devices simultaneously and mixes them together
+    /// Returns immediately, audio is captured in background
+    async fn start_dual_capture(
+        &mut self,
+        speaker_device: Option<String>,
+        microphone_device: Option<String>,
+    ) -> Result<()>;
+
     /// Stops audio capture
     async fn stop_capture(&mut self) -> Result<()>;
 
@@ -64,4 +73,8 @@ pub trait AudioCapturePort: Send + Sync {
 
     /// Gets the audio format being used
     fn get_format(&self) -> AudioFormat;
+
+    /// Gets the current audio level (0.0 to 1.0) without consuming the buffer
+    /// Used for visual feedback during audio testing
+    fn get_current_level(&self) -> f32;
 }
