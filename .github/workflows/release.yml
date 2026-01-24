@@ -598,47 +598,6 @@ jobs:
           asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_arm64.deb
           asset_content_type: application/vnd.debian.binary-package
 
-      - name: Upload Linux ARM64 AppImage
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
-        with:
-          upload_url: ${{ needs.prepare-release.outputs.upload_url }}
-          asset_path: apps/desktop/src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_aarch64.AppImage
-          asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_arm64.AppImage
-          asset_content_type: application/octet-stream
-
-      - name: Check if Linux ARM64 signature was created
-        id: check_linux_arm64_sig
-        run: |
-          SIG_PATH="apps/desktop/src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_aarch64.AppImage.sig"
-          if [ -f "$SIG_PATH" ]; then
-            echo "Linux ARM64 signature file found: $SIG_PATH"
-            echo "sig_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "Linux ARM64 signature file NOT found: $SIG_PATH"
-            echo "sig_exists=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Upload Linux ARM64 AppImage Signature
-        if: steps.check_linux_arm64_sig.outputs.sig_exists == 'true'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
-        with:
-          upload_url: ${{ needs.prepare-release.outputs.upload_url }}
-          asset_path: apps/desktop/src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_aarch64.AppImage.sig
-          asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_arm64.AppImage.sig
-          asset_content_type: text/plain
-
-      - name: Save Linux ARM64 signature as artifact
-        if: steps.check_linux_arm64_sig.outputs.sig_exists == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-arm64-sig
-          path: apps/desktop/src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/appimage/meet-scribe_${{ needs.prepare-release.outputs.version }}_aarch64.AppImage.sig
-          retention-days: 1
-
   # Generate and upload updater manifest
   create-updater-manifest:
     needs: [prepare-release, build-windows, build-windows-arm64, build-linux, build-linux-arm64]

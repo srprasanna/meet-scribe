@@ -492,17 +492,11 @@ function Settings() {
                   <Switch.Root
                     checked={isActive}
                     onCheckedChange={(details: { checked: boolean }) =>
-                     
                       handleToggleService(serviceType, provider, details.checked)
-                    
                     }
                     disabled={
-                      
                       loading[`activate_${serviceType}_${provider}`] ||
-                     
                       loading[`deactivate_${serviceType}_${provider}`] ||
-                      (!isActive && !!otherActiveProvider)
-                     ||
                       (!isActive && !!otherActiveProvider)
                     }
                     colorPalette="blue"
@@ -688,9 +682,11 @@ function Settings() {
               ) : otherActiveProvider ? (
                 <Text color="orange.700">
                   ⚠️{" "}
-                  {serviceType === "asr"
-                    ? ASR_PROVIDERS[otherActiveProvider as keyof typeof ASR_PROVIDERS]?.name
-                    : LLM_PROVIDERS[otherActiveProvider as keyof typeof LLM_PROVIDERS]?.name}{" "}
+                  {
+                    (serviceType === "asr" ? ASR_PROVIDERS : LLM_PROVIDERS)[
+                      otherActiveProvider as keyof typeof ASR_PROVIDERS
+                    ]?.name
+                  }{" "}
                   is currently active. Deactivate it first to enable this service.
                 </Text>
               ) : (
