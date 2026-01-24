@@ -492,11 +492,17 @@ function Settings() {
                   <Switch.Root
                     checked={isActive}
                     onCheckedChange={(details: { checked: boolean }) =>
+                     
                       handleToggleService(serviceType, provider, details.checked)
+                    
                     }
                     disabled={
+                      
                       loading[`activate_${serviceType}_${provider}`] ||
+                     
                       loading[`deactivate_${serviceType}_${provider}`] ||
+                      (!isActive && !!otherActiveProvider)
+                     ||
                       (!isActive && !!otherActiveProvider)
                     }
                     colorPalette="blue"
