@@ -65,11 +65,12 @@ impl StoragePort for SqliteStorage {
     async fn create_meeting(&self, meeting: &Meeting) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO meetings (platform, title, start_time, end_time, participant_count, audio_file_path, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO meetings (platform, title, language, start_time, end_time, participant_count, audio_file_path, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 meeting.platform.to_string(),
                 meeting.title,
+                meeting.language,
                 meeting.start_time,
                 meeting.end_time,
                 meeting.participant_count,
@@ -83,7 +84,7 @@ impl StoragePort for SqliteStorage {
     async fn get_meeting(&self, id: i64) -> Result<Option<Meeting>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, platform, title, start_time, end_time, participant_count, audio_file_path, created_at
+            "SELECT id, platform, title, language, start_time, end_time, participant_count, audio_file_path, created_at
              FROM meetings WHERE id = ?1",
         )?;
 
@@ -102,11 +103,12 @@ impl StoragePort for SqliteStorage {
                 id: Some(row.get(0)?),
                 platform,
                 title: row.get(2)?,
-                start_time: row.get(3)?,
-                end_time: row.get(4)?,
-                participant_count: row.get(5)?,
-                audio_file_path: row.get(6)?,
-                created_at: row.get(7)?,
+                language: row.get(3)?,
+                start_time: row.get(4)?,
+                end_time: row.get(5)?,
+                participant_count: row.get(6)?,
+                audio_file_path: row.get(7)?,
+                created_at: row.get(8)?,
             }))
         } else {
             Ok(None)
@@ -116,7 +118,7 @@ impl StoragePort for SqliteStorage {
     async fn list_meetings(&self, limit: Option<i32>, offset: Option<i32>) -> Result<Vec<Meeting>> {
         let conn = self.conn.lock().unwrap();
         let query = format!(
-            "SELECT id, platform, title, start_time, end_time, participant_count, audio_file_path, created_at
+            "SELECT id, platform, title, language, start_time, end_time, participant_count, audio_file_path, created_at
              FROM meetings ORDER BY start_time DESC LIMIT ?1 OFFSET ?2"
         );
 
@@ -134,11 +136,12 @@ impl StoragePort for SqliteStorage {
                 id: Some(row.get(0)?),
                 platform,
                 title: row.get(2)?,
-                start_time: row.get(3)?,
-                end_time: row.get(4)?,
-                participant_count: row.get(5)?,
-                audio_file_path: row.get(6)?,
-                created_at: row.get(7)?,
+                language: row.get(3)?,
+                start_time: row.get(4)?,
+                end_time: row.get(5)?,
+                participant_count: row.get(6)?,
+                audio_file_path: row.get(7)?,
+                created_at: row.get(8)?,
             })
         })?;
 
@@ -153,11 +156,12 @@ impl StoragePort for SqliteStorage {
     async fn update_meeting(&self, meeting: &Meeting) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "UPDATE meetings SET platform = ?1, title = ?2, start_time = ?3, end_time = ?4,
-             participant_count = ?5, audio_file_path = ?6 WHERE id = ?7",
+            "UPDATE meetings SET platform = ?1, title = ?2, language = ?3, start_time = ?4, end_time = ?5,
+             participant_count = ?6, audio_file_path = ?7 WHERE id = ?8",
             params![
                 meeting.platform.to_string(),
                 meeting.title,
+                meeting.language,
                 meeting.start_time,
                 meeting.end_time,
                 meeting.participant_count,
@@ -733,7 +737,7 @@ impl StoragePort for SqliteStorage {
 
         let sql = r#"
             SELECT
-                m.id, m.platform, m.title, m.start_time, m.end_time,
+                m.id, m.platform, m.title, m.language, m.start_time, m.end_time,
                 m.participant_count, m.audio_file_path, m.created_at
             FROM meetings_fts
             INNER JOIN meetings m ON meetings_fts.rowid = m.id
@@ -756,11 +760,12 @@ impl StoragePort for SqliteStorage {
                 id: Some(row.get(0)?),
                 platform,
                 title: row.get(2)?,
-                start_time: row.get(3)?,
-                end_time: row.get(4)?,
-                participant_count: row.get(5)?,
-                audio_file_path: row.get(6)?,
-                created_at: row.get(7)?,
+                language: row.get(3)?,
+                start_time: row.get(4)?,
+                end_time: row.get(5)?,
+                participant_count: row.get(6)?,
+                audio_file_path: row.get(7)?,
+                created_at: row.get(8)?,
             })
         })?;
 

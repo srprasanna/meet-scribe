@@ -42,9 +42,30 @@ const PLATFORMS = [
   { value: "meet", label: "Google Meet", icon: "🟢" },
 ];
 
+// Common languages supported by AssemblyAI and Deepgram
+const LANGUAGES = [
+  { value: "en", label: "English" },
+  { value: "es", label: "Spanish" },
+  { value: "fr", label: "French" },
+  { value: "de", label: "German" },
+  { value: "it", label: "Italian" },
+  { value: "pt", label: "Portuguese" },
+  { value: "nl", label: "Dutch" },
+  { value: "ja", label: "Japanese" },
+  { value: "ko", label: "Korean" },
+  { value: "zh", label: "Chinese" },
+  { value: "hi", label: "Hindi" },
+  { value: "ru", label: "Russian" },
+  { value: "pl", label: "Polish" },
+  { value: "tr", label: "Turkish" },
+  { value: "uk", label: "Ukrainian" },
+  { value: "vi", label: "Vietnamese" },
+];
+
 function ActiveMeeting() {
   const [selectedPlatform, setSelectedPlatform] = useState<string>("teams");
   const [meetingTitle, setMeetingTitle] = useState<string>("");
+  const [selectedLanguage, setSelectedLanguage] = useState<string>("en");
   const [selectedSpeakerDevice, setSelectedSpeakerDevice] = useState<string>("0: Default Communication Device");
   const [selectedMicrophoneDevice, setSelectedMicrophoneDevice] = useState<string>("");
   const [speakerDevices, setSpeakerDevices] = useState<string[]>([]);
@@ -135,6 +156,7 @@ function ActiveMeeting() {
         request: {
           platform: selectedPlatform,
           title: meetingTitle || null,
+          language: selectedLanguage,
           speaker_device: selectedSpeakerDevice,
           microphone_device: selectedMicrophoneDevice,
         },
@@ -304,6 +326,43 @@ function ActiveMeeting() {
                   fontSize: "14px",
                 }}
               />
+            </div>
+
+            {/* Language Selection */}
+            <div style={{ marginBottom: "16px" }}>
+              <label
+                htmlFor="language"
+                style={{
+                  display: "block",
+                  marginBottom: "8px",
+                  fontWeight: "500",
+                }}
+              >
+                Transcription Language
+              </label>
+              <select
+                id="language"
+                value={selectedLanguage}
+                onChange={(e) => setSelectedLanguage(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  border: "1px solid #ddd",
+                  borderRadius: "6px",
+                  fontSize: "14px",
+                  cursor: "pointer",
+                  background: "white",
+                }}
+              >
+                {LANGUAGES.map((lang) => (
+                  <option key={lang.value} value={lang.value}>
+                    {lang.label}
+                  </option>
+                ))}
+              </select>
+              <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>
+                Select the primary language spoken in the meeting for transcription
+              </div>
             </div>
 
             {/* Speaker Device Selection */}

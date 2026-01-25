@@ -28,7 +28,8 @@ pub struct Meeting {
     pub id: Option<i64>,
     pub platform: Platform,
     pub title: Option<String>,
-    pub start_time: i64, // Unix timestamp
+    pub language: Option<String>, // Language code for transcription (e.g., "en", "es", "fr")
+    pub start_time: i64,          // Unix timestamp
     pub end_time: Option<i64>,
     pub participant_count: Option<i32>,
     pub audio_file_path: Option<String>, // Path to recorded audio file
@@ -37,12 +38,13 @@ pub struct Meeting {
 
 impl Meeting {
     /// Creates a new meeting instance
-    pub fn new(platform: Platform, title: Option<String>) -> Self {
+    pub fn new(platform: Platform, title: Option<String>, language: Option<String>) -> Self {
         let now = chrono::Utc::now().timestamp();
         Self {
             id: None,
             platform,
             title,
+            language,
             start_time: now,
             end_time: None,
             participant_count: None,

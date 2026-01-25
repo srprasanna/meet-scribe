@@ -11,10 +11,11 @@ use tauri::Manager;
 /// Request to start a new meeting
 #[derive(Debug, Deserialize)]
 pub struct StartMeetingRequest {
-    pub platform: String, // "teams", "zoom", "meet"
+    pub platform: String,                   // "teams", "zoom", "meet"
     pub title: Option<String>,
-    pub speaker_device: Option<String>, // Speaker device (e.g., "0: Headset A18 (Speaker)")
-    pub microphone_device: Option<String>, // Microphone device (e.g., "1: Headset A18 (Microphone)")
+    pub language: Option<String>,           // Language code for transcription (e.g., "en", "es", "fr")
+    pub speaker_device: Option<String>,     // Speaker device (e.g., "0: Headset A18 (Speaker)")
+    pub microphone_device: Option<String>,  // Microphone device (e.g., "1: Headset A18 (Microphone)")
 }
 
 /// Meeting status response
@@ -61,8 +62,9 @@ pub async fn start_meeting(
         _ => return Err(format!("Invalid platform: {}", request.platform)),
     };
 
-    // Create meeting record
-    let meeting = Meeting::new(platform, request.title.clone());
+    // Create meeting record with language (default to "en" if not specified)
+    let language = request.language.clone().or_else(|| Some("en".to_string()));
+    let meeting = Meeting::new(platform, request.title.clone(), language);
     let meeting_id = state
         .storage
         .create_meeting(&meeting)
