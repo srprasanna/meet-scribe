@@ -49,6 +49,9 @@ impl SqliteStorage {
                 "../../../migrations/005_add_speaker_label_to_transcripts.sql"
             )),
             M::up(include_str!("../../../migrations/006_add_fts5_search.sql")),
+            M::up(include_str!(
+                "../../../migrations/007_add_language_to_meetings.sql"
+            )),
         ]);
 
         let mut conn = self.conn.lock().unwrap();
