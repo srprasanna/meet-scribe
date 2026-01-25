@@ -8,11 +8,17 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::Manager;
 
+/// Supported language codes for transcription (must match frontend LANGUAGES array)
+const SUPPORTED_LANGUAGES: &[&str] = &[
+    "en", "es", "fr", "de", "it", "pt", "nl", "ja", "ko", "zh", "hi", "ru", "pl", "tr", "uk", "vi",
+];
+
 /// Request to start a new meeting
 #[derive(Debug, Deserialize)]
 pub struct StartMeetingRequest {
     pub platform: String, // "teams", "zoom", "meet"
     pub title: Option<String>,
+    pub language: Option<String>, // Language code for transcription (e.g., "en", "es", "fr")
     pub speaker_device: Option<String>, // Speaker device (e.g., "0: Headset A18 (Speaker)")
     pub microphone_device: Option<String>, // Microphone device (e.g., "1: Headset A18 (Microphone)")
 }
@@ -61,8 +67,16 @@ pub async fn start_meeting(
         _ => return Err(format!("Invalid platform: {}", request.platform)),
     };
 
-    // Create meeting record
-    let meeting = Meeting::new(platform, request.title.clone());
+    // Validate and normalize language code
+    let language = match &request.language {
+        Some(lang) if SUPPORTED_LANGUAGES.contains(&lang.as_str()) => Some(lang.clone()),
+        Some(lang) => {
+            log::warn!("Invalid language code '{}', defaulting to 'en'", lang);
+            Some("en".to_string())
+        }
+        None => Some("en".to_string()),
+    };
+    let meeting = Meeting::new(platform, request.title.clone(), language);
     let meeting_id = state
         .storage
         .create_meeting(&meeting)

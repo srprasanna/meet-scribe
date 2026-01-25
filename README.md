@@ -1,5 +1,15 @@
 # Meet Scribe
 
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+![GitHub release](https://img.shields.io/github/v/release/srprasanna/meet-scribe)
+![Build Status](https://img.shields.io/github/actions/workflow/status/srprasanna/meet-scribe/release.yml?branch=main)
+
+![Rust](https://img.shields.io/badge/Rust-000000?style=flat&logo=rust&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white)
+![Tauri](https://img.shields.io/badge/Tauri-24C8D8?style=flat&logo=tauri&logoColor=white)
+![Windows](https://img.shields.io/badge/Windows-0078D6?style=flat&logo=windows&logoColor=white)
+![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat&logo=linux&logoColor=black)
+
 A bot-free desktop meeting assistant for Windows and Linux that captures, transcribes, and generates insights from Teams, Zoom, and Google Meet meetings.
 
 ---

@@ -27,6 +27,9 @@ pub enum AppError {
     #[error("Audio capture error: {0}")]
     AudioCapture(String),
 
+    #[error("Participant detection error: {0}")]
+    Detection(String),
+
     #[error("Transcription service error: {0}")]
     Transcription(String),
 

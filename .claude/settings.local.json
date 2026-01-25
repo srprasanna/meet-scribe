@@ -15,7 +15,8 @@
       "Bash(npm run detect-target:*)",
       "Bash(node -p:*)",
       "Bash(dir:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

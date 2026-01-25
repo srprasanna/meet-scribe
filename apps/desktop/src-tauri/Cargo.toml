@@ -60,6 +60,10 @@ windows = { version = "0.58", features = [
     "Win32_UI_Shell_PropertiesSystem",
     "Win32_Devices",
     "Win32_Devices_FunctionDiscovery",
+    # UI Automation for participant detection
+    "Win32_UI_Accessibility",
+    "Win32_UI_WindowsAndMessaging",
+    "implement",
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
