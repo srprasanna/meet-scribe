@@ -1,5 +1,6 @@
 /// Tauri IPC command modules
 pub mod config;
+pub mod detection;
 pub mod export;
 pub mod llm;
 pub mod meeting;

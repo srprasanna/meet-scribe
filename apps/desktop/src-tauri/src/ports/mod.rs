@@ -3,6 +3,7 @@
 /// These traits define the contracts for adapters to implement.
 /// Following the ports-and-adapters (hexagonal) architecture pattern.
 pub mod audio;
+pub mod detection;
 pub mod llm;
 pub mod storage;
 pub mod transcription;
@@ -11,6 +12,10 @@ pub mod transcription;
 pub mod mocks;
 
 pub use audio::{AudioBuffer, AudioCapturePort, AudioFormat};
+pub use detection::{
+    DetectedMeeting, DetectedParticipant, DetectionConfig, DetectionMethod, DetectionResult,
+    ParticipantDetectorPort,
+};
 pub use llm::{GeneratedInsight, InsightRequest, LlmConfig, LlmServicePort};
 pub use storage::StoragePort;
 pub use transcription::{

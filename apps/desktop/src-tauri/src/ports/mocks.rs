@@ -1,10 +1,7 @@
 //! Mock implementations for testing
 
 use crate::domain::models::{
-    
-    Insight, InsightSearchResult, InsightSearchResult, Meeting, Participant, SearchResults, SearchResults, ServiceConfig, Transcript,
-    TranscriptSearchResult,
-,
+    Insight, InsightSearchResult, Meeting, Participant, SearchResults, ServiceConfig, Transcript,
     TranscriptSearchResult,
 };
 use crate::error::Result;
@@ -268,109 +265,6 @@ impl StoragePort for MockStorage {
 
     async fn list_service_configs(&self) -> Result<Vec<ServiceConfig>> {
         Ok(self.service_configs.lock().unwrap().clone())
-    }
-
-    async fn search_transcripts(
-        &self,
-        query: &str,
-        limit: Option<i32>,
-    ) -> Result<Vec<TranscriptSearchResult>> {
-        let transcripts = self.transcripts.lock().unwrap();
-        let meetings = self.meetings.lock().unwrap();
-        let query_lower = query.to_lowercase();
-
-        let mut results: Vec<TranscriptSearchResult> = transcripts
-            .iter()
-            .filter(|t| {
-                t.text.to_lowercase().contains(&query_lower)
-                    || t.speaker_label
-                        .as_ref()
-                        .map(|s| s.to_lowercase().contains(&query_lower))
-                        .unwrap_or(false)
-            })
-            .map(|t| {
-                let meeting = meetings.get(&t.meeting_id);
-                TranscriptSearchResult {
-                    transcript: t.clone(),
-                    meeting_title: meeting.and_then(|m| m.title.clone()),
-                    meeting_platform: meeting.map(|m| m.platform.to_string()).unwrap_or_default(),
-                    rank: 1.0, // Mock rank
-                }
-            })
-            .collect();
-
-        if let Some(limit) = limit {
-            results.truncate(limit as usize);
-        }
-
-        Ok(results)
-    }
-
-    async fn search_insights(
-        &self,
-        query: &str,
-        limit: Option<i32>,
-    ) -> Result<Vec<InsightSearchResult>> {
-        let insights = self.insights.lock().unwrap();
-        let meetings = self.meetings.lock().unwrap();
-        let query_lower = query.to_lowercase();
-
-        let mut results: Vec<InsightSearchResult> = insights
-            .iter()
-            .filter(|i| i.content.to_lowercase().contains(&query_lower))
-            .map(|i| {
-                let meeting = meetings.get(&i.meeting_id);
-                InsightSearchResult {
-                    insight: i.clone(),
-                    meeting_title: meeting.and_then(|m| m.title.clone()),
-                    meeting_platform: meeting.map(|m| m.platform.to_string()).unwrap_or_default(),
-                    rank: 1.0, // Mock rank
-                }
-            })
-            .collect();
-
-        if let Some(limit) = limit {
-            results.truncate(limit as usize);
-        }
-
-        Ok(results)
-    }
-
-    async fn search_meetings(&self, query: &str, limit: Option<i32>) -> Result<Vec<Meeting>> {
-        let meetings = self.meetings.lock().unwrap();
-        let query_lower = query.to_lowercase();
-
-        let mut results: Vec<Meeting> = meetings
-            .values()
-            .filter(|m| {
-                m.title
-                    .as_ref()
-                    .map(|t| t.to_lowercase().contains(&query_lower))
-                    .unwrap_or(false)
-                    || m.platform.to_string().to_lowercase().contains(&query_lower)
-            })
-            .cloned()
-            .collect();
-
-        results.sort_by_key(|m| -m.start_time);
-
-        if let Some(limit) = limit {
-            results.truncate(limit as usize);
-        }
-
-        Ok(results)
-    }
-
-    async fn search_all(&self, query: &str, limit: Option<i32>) -> Result<SearchResults> {
-        let transcripts = self.search_transcripts(query, limit).await?;
-        let insights = self.search_insights(query, limit).await?;
-        let meetings = self.search_meetings(query, limit).await?;
-
-        Ok(SearchResults {
-            transcripts,
-            insights,
-            meetings,
-        })
     }
 
     async fn search_transcripts(

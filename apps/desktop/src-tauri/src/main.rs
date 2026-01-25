@@ -260,6 +260,14 @@ fn main() {
             commands::participant::link_speaker_to_participant,
             commands::participant::unlink_speaker,
             commands::participant::delete_meeting_participants,
+            // Detection commands (UI Automation / AT-SPI)
+            commands::detection::list_active_meetings,
+            commands::detection::detect_participants,
+            commands::detection::auto_detect_participants,
+            commands::detection::is_detection_available,
+            commands::detection::get_detection_info,
+            commands::detection::import_detected_participants,
+            commands::detection::detect_and_import_participants,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
