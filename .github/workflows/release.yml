@@ -190,8 +190,8 @@ jobs:
             conf.version = process.argv[1];
             fs.writeFileSync('apps/desktop/src-tauri/tauri.conf.json', JSON.stringify(conf, null, 2) + '\n');
           " "$VERSION"
-          cd apps/desktop && npm version "$VERSION" --no-git-tag-version --allow-same-version
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" apps/desktop/src-tauri/Cargo.toml
+          cd apps/desktop && npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -299,7 +299,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         with:
           upload_url: ${{ needs.prepare-release.outputs.upload_url }}
-          asset_path: apps/desktop/src-tauri/target/release/bundle/msi/Meet Scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi
+          asset_path: apps/desktop/src-tauri/target/release/bundle/msi/meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi
           asset_name: meet-scribe_${{ needs.prepare-release.outputs.version }}_x64_en-US.msi
           asset_content_type: application/x-msi
 
@@ -323,8 +323,8 @@ jobs:
             conf.version = process.argv[1];
             fs.writeFileSync('apps/desktop/src-tauri/tauri.conf.json', JSON.stringify(conf, null, 2) + '\n');
           " "$VERSION"
-          cd apps/desktop && npm version "$VERSION" --no-git-tag-version --allow-same-version
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" apps/desktop/src-tauri/Cargo.toml
+          cd apps/desktop && npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -427,8 +427,8 @@ jobs:
             conf.version = process.argv[1];
             fs.writeFileSync('apps/desktop/src-tauri/tauri.conf.json', JSON.stringify(conf, null, 2) + '\n');
           " "$VERSION"
-          cd apps/desktop && npm version "$VERSION" --no-git-tag-version --allow-same-version
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" apps/desktop/src-tauri/Cargo.toml
+          cd apps/desktop && npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -575,8 +575,8 @@ jobs:
             conf.version = process.argv[1];
             fs.writeFileSync('apps/desktop/src-tauri/tauri.conf.json', JSON.stringify(conf, null, 2) + '\n');
           " "$VERSION"
-          cd apps/desktop && npm version "$VERSION" --no-git-tag-version --allow-same-version
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" apps/desktop/src-tauri/Cargo.toml
+          cd apps/desktop && npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
