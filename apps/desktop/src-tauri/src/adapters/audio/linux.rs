@@ -586,26 +586,216 @@ impl AudioCapturePort for PulseAudioCapture {
         speaker_device: Option<String>,
         microphone_device: Option<String>,
     ) -> Result<()> {
-        // For Linux, dual capture is not yet fully implemented
-        // For now, we prioritize the speaker device (loopback) if specified,
-        // otherwise fall back to the microphone
-        log::info!(
-            "Linux dual capture: using single device mode (speaker: {:?}, mic: {:?})",
-            speaker_device,
-            microphone_device
-        );
-
-        let device = speaker_device.or(microphone_device);
-
-        if device.is_none() {
-            return Err(AppError::AudioCapture(
-                "At least one device (speaker or microphone) must be specified".to_string(),
-            ));
+        {
+            let mut is_capturing = self.is_capturing.lock().unwrap();
+            if *is_capturing {
+                return Err(AppError::AudioCapture(
+                    "Capture already in progress".to_string(),
+                ));
+            }
+            *is_capturing = true;
         }
 
-        // TODO: Implement true dual capture with mixing for Linux
-        // For now, use single device capture
-        self.start_capture(device).await
+        let is_capturing_clone = Arc::clone(&self.is_capturing);
+        let audio_buffer_clone = Arc::clone(&self.audio_buffer);
+        let current_level_clone = Arc::clone(&self.current_level);
+
+        // Speaker: index 0 → @DEFAULT_MONITOR@ (loopback of default speaker output)
+        let speaker_index = speaker_device
+            .as_ref()
+            .and_then(|name| name.split(':').next()?.trim().parse::<usize>().ok())
+            .unwrap_or(0);
+        let speaker_pa_device = Self::get_device_name_by_index(speaker_index)?;
+
+        // Mic: use @DEFAULT_SOURCE@ (PulseAudio default input / microphone).
+        // Both streams request stereo 44100 S16le — PulseAudio converts internally,
+        // so both buffers always have the same channel layout and can be mixed directly.
+        // TODO: resolve the actual PulseAudio source name when a specific mic index is provided.
+        let mic_pa_device = "@DEFAULT_SOURCE@".to_string();
+
+        log::info!(
+            "Linux dual capture: speaker={}, mic={}",
+            speaker_pa_device,
+            mic_pa_device
+        );
+
+        let format_info = Arc::new(Mutex::new(AudioFormat::default()));
+        let format_info_clone = Arc::clone(&format_info);
+        *format_info_clone.lock().unwrap() = AudioFormat {
+            sample_rate: 44100,
+            channels: 2,
+            bits_per_sample: 16,
+        };
+
+        let handle = tokio::task::spawn_blocking(move || {
+            let speaker_buf: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
+            let mic_buf: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
+
+            let is_capturing_spk = Arc::clone(&is_capturing_clone);
+            let is_capturing_mic = Arc::clone(&is_capturing_clone);
+            let speaker_buf_writer = Arc::clone(&speaker_buf);
+            let mic_buf_writer = Arc::clone(&mic_buf);
+
+            // Speaker capture thread — creates its own Simple connection inside
+            let spk_thread = std::thread::spawn(move || {
+                let spec = Spec {
+                    format: Format::S16le,
+                    channels: 2,
+                    rate: 44100,
+                };
+                let simple = match Simple::new(
+                    None,
+                    "Meet-Scribe",
+                    Direction::Record,
+                    Some(&speaker_pa_device),
+                    "Speaker Capture",
+                    &spec,
+                    None,
+                    None,
+                ) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::error!("Failed to create speaker PulseAudio stream: {}", e);
+                        return;
+                    }
+                };
+
+                log::info!(
+                    "Speaker capture started: {} Hz, {} ch, 16-bit S16le",
+                    spec.rate,
+                    spec.channels
+                );
+
+                let buffer_size = 1024 * spec.channels as usize * 2; // frames × channels × bytes
+                let mut read_buffer = vec![0u8; buffer_size];
+
+                while *is_capturing_spk.lock().unwrap() {
+                    match simple.read(&mut read_buffer) {
+                        Ok(_) => {
+                            let samples: Vec<f32> = read_buffer
+                                .chunks_exact(2)
+                                .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0)
+                                .collect();
+                            speaker_buf_writer.lock().unwrap().extend(samples);
+                        }
+                        Err(e) => {
+                            log::error!("Speaker read error: {}", e);
+                            break;
+                        }
+                    }
+                }
+
+                log::info!("Speaker capture thread stopped");
+            });
+
+            // Mic capture thread — creates its own Simple connection inside.
+            // Requests stereo so PulseAudio upmixes mono hardware internally;
+            // both buffers are always stereo, eliminating any channel mismatch in the mixer.
+            let mic_thread = std::thread::spawn(move || {
+                let spec = Spec {
+                    format: Format::S16le,
+                    channels: 2,
+                    rate: 44100,
+                };
+                let simple = match Simple::new(
+                    None,
+                    "Meet-Scribe",
+                    Direction::Record,
+                    Some(&mic_pa_device),
+                    "Mic Capture",
+                    &spec,
+                    None,
+                    None,
+                ) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::error!("Failed to create mic PulseAudio stream: {}", e);
+                        return;
+                    }
+                };
+
+                log::info!(
+                    "Mic capture started: {} Hz, {} ch, 16-bit S16le",
+                    spec.rate,
+                    spec.channels
+                );
+
+                let buffer_size = 1024 * spec.channels as usize * 2;
+                let mut read_buffer = vec![0u8; buffer_size];
+
+                while *is_capturing_mic.lock().unwrap() {
+                    match simple.read(&mut read_buffer) {
+                        Ok(_) => {
+                            let samples: Vec<f32> = read_buffer
+                                .chunks_exact(2)
+                                .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0)
+                                .collect();
+                            mic_buf_writer.lock().unwrap().extend(samples);
+                        }
+                        Err(e) => {
+                            log::error!("Mic read error: {}", e);
+                            break;
+                        }
+                    }
+                }
+
+                log::info!("Mic capture thread stopped");
+            });
+
+            // Mixer loop: drain both buffers every 50 ms and mix.
+            // Both streams are stereo so samples interleave identically — no channel mismatch.
+            while *is_capturing_clone.lock().unwrap() {
+                std::thread::sleep(Duration::from_millis(50));
+
+                let speaker_samples: Vec<f32> = {
+                    let mut buf = speaker_buf.lock().unwrap();
+                    buf.drain(..).collect()
+                };
+                let mic_samples: Vec<f32> = {
+                    let mut buf = mic_buf.lock().unwrap();
+                    buf.drain(..).collect()
+                };
+
+                if speaker_samples.is_empty() && mic_samples.is_empty() {
+                    continue;
+                }
+
+                let max_len = speaker_samples.len().max(mic_samples.len());
+                let mut mixed = Vec::with_capacity(max_len);
+                for i in 0..max_len {
+                    let s = speaker_samples.get(i).copied().unwrap_or(0.0);
+                    let m = mic_samples.get(i).copied().unwrap_or(0.0);
+                    mixed.push((s + m) / 2.0);
+                }
+
+                if !mixed.is_empty() {
+                    let level = mixed.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+                    *current_level_clone.lock().unwrap() = level;
+                }
+
+                audio_buffer_clone.lock().unwrap().extend(mixed);
+            }
+
+            let _ = spk_thread.join();
+            let _ = mic_thread.join();
+
+            log::info!("PulseAudio dual capture stopped");
+        });
+
+        self.capture_handle = Some(handle);
+
+        // Brief wait for both PulseAudio streams to open
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        self.format = format_info.lock().unwrap().clone();
+
+        log::info!(
+            "Dual audio capture started: {} Hz, {} channels, {} bits",
+            self.format.sample_rate,
+            self.format.channels,
+            self.format.bits_per_sample
+        );
+        Ok(())
     }
 
     async fn stop_capture(&mut self) -> Result<()> {

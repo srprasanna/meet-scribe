@@ -12,7 +12,7 @@ use windows::core::Interface;
 use windows::Win32::Media::Audio::{
     eCapture, eConsole, eRender, IAudioCaptureClient, IAudioClient, IMMDevice, IMMDeviceEnumerator,
     IMMEndpoint, MMDeviceEnumerator, AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_SHAREMODE_SHARED,
-    AUDCLNT_STREAMFLAGS_LOOPBACK, WAVEFORMATEX,
+    AUDCLNT_STREAMFLAGS_LOOPBACK, WAVEFORMATEX, WAVEFORMATEXTENSIBLE,
 };
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED,
@@ -304,8 +304,10 @@ impl WasapiAudioCapture {
     /// for loopback capture. Returns the detected format parameters which are used
     /// to update the WasapiAudioCapture.format field.
     ///
-    /// Returns: (WAVEFORMATEX, sample_rate, bits_per_sample)
-    fn initialize_audio_client(audio_client: &IAudioClient) -> Result<(WAVEFORMATEX, u32, u16)> {
+    /// Returns: (WAVEFORMATEX, sample_rate, bits_per_sample, is_float)
+    fn initialize_audio_client(
+        audio_client: &IAudioClient,
+    ) -> Result<(WAVEFORMATEX, u32, u16, bool)> {
         unsafe {
             // Get the device's mix format (auto-detected from system)
             let mix_format_ptr = audio_client
@@ -321,6 +323,7 @@ impl WasapiAudioCapture {
             let mix_format = *mix_format_ptr;
             let sample_rate = mix_format.nSamplesPerSec; // Actual system sample rate
             let bits_per_sample = mix_format.wBitsPerSample; // Actual bit depth
+            let is_float = Self::detect_is_float_format(mix_format_ptr);
 
             // Initialize the audio client for loopback capture
             let buffer_duration = 10_000_000; // 1 second in 100-nanosecond units
@@ -340,7 +343,7 @@ impl WasapiAudioCapture {
             // Free the mix format
             windows::Win32::System::Com::CoTaskMemFree(Some(mix_format_ptr as *const _));
 
-            Ok((mix_format, sample_rate, bits_per_sample))
+            Ok((mix_format, sample_rate, bits_per_sample, is_float))
         }
     }
 
@@ -349,7 +352,7 @@ impl WasapiAudioCapture {
     /// Similar to initialize_audio_client but doesn't use loopback mode
     fn initialize_microphone_client(
         audio_client: &IAudioClient,
-    ) -> Result<(WAVEFORMATEX, u32, u16)> {
+    ) -> Result<(WAVEFORMATEX, u32, u16, bool)> {
         unsafe {
             // Get the device's mix format (auto-detected from system)
             let mix_format_ptr = audio_client
@@ -365,6 +368,22 @@ impl WasapiAudioCapture {
             let mix_format = *mix_format_ptr;
             let sample_rate = mix_format.nSamplesPerSec;
             let bits_per_sample = mix_format.wBitsPerSample;
+            // Copy packed field to a local to avoid unaligned reference
+            let n_channels = mix_format.nChannels;
+            // Detect float vs PCM integer — microphone drivers may return 32-bit PCM int
+            // which must NOT be interpreted as IEEE float (produces static).
+            let is_float = Self::detect_is_float_format(mix_format_ptr);
+            log::info!(
+                "Microphone format: {} Hz, {} ch, {} bit, {}",
+                sample_rate,
+                n_channels,
+                bits_per_sample,
+                if is_float {
+                    "IEEE float"
+                } else {
+                    "PCM integer"
+                }
+            );
 
             // Initialize the audio client for normal (non-loopback) capture
             let buffer_duration = 10_000_000; // 1 second in 100-nanosecond units
@@ -384,12 +403,52 @@ impl WasapiAudioCapture {
             // Free the mix format
             windows::Win32::System::Com::CoTaskMemFree(Some(mix_format_ptr as *const _));
 
-            Ok((mix_format, sample_rate, bits_per_sample))
+            Ok((mix_format, sample_rate, bits_per_sample, is_float))
+        }
+    }
+
+    /// Detect whether the audio format uses IEEE float or PCM integer samples.
+    ///
+    /// WASAPI `GetMixFormat()` always returns `WAVE_FORMAT_EXTENSIBLE` on modern Windows.
+    /// The SubFormat GUID distinguishes IEEE float from PCM integer:
+    /// - Speaker loopback: always IEEE float (Windows system mixer)
+    /// - Microphone: may be IEEE float or 32-bit PCM integer depending on the driver
+    ///
+    /// Reading 32-bit PCM integer bytes as IEEE float produces complete garbage (static).
+    unsafe fn detect_is_float_format(format_ptr: *const WAVEFORMATEX) -> bool {
+        const WAVE_FORMAT_PCM: u16 = 1;
+        const WAVE_FORMAT_IEEE_FLOAT: u16 = 3;
+        const WAVE_FORMAT_EXTENSIBLE: u16 = 0xFFFE;
+
+        let tag = (*format_ptr).wFormatTag;
+        match tag {
+            WAVE_FORMAT_IEEE_FLOAT => true,
+            WAVE_FORMAT_PCM => false,
+            WAVE_FORMAT_EXTENSIBLE => {
+                let ext = format_ptr as *const WAVEFORMATEXTENSIBLE;
+                // KSDATAFORMAT_SUBTYPE_IEEE_FLOAT: {00000003-0000-0010-8000-00aa00389b71}
+                let ieee_float_guid = windows::core::GUID::from_values(
+                    0x0000_0003,
+                    0x0000,
+                    0x0010,
+                    [0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71],
+                );
+                // SubFormat is in a packed struct; use read_unaligned to avoid UB
+                let sub_format = std::ptr::read_unaligned(std::ptr::addr_of!((*ext).SubFormat));
+                sub_format == ieee_float_guid
+            }
+            _ => {
+                log::warn!(
+                    "Unknown WAVEFORMATEX tag: {:#06x}, assuming IEEE float",
+                    tag
+                );
+                true
+            }
         }
     }
 
     /// Convert audio samples from bytes to f32 normalized format based on format
-    fn convert_samples_to_f32(data: &[u8], format: &WAVEFORMATEX) -> Vec<f32> {
+    fn convert_samples_to_f32(data: &[u8], format: &WAVEFORMATEX, is_float: bool) -> Vec<f32> {
         let mut samples = Vec::new();
         let bits_per_sample = format.wBitsPerSample;
 
@@ -402,10 +461,19 @@ impl WasapiAudioCapture {
                 }
             }
             32 => {
-                // 32-bit float (most common for WASAPI)
-                for chunk in data.chunks_exact(4) {
-                    let sample = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-                    samples.push(sample);
+                if is_float {
+                    // 32-bit IEEE float (loopback always; mic when SubFormat = IEEE_FLOAT)
+                    for chunk in data.chunks_exact(4) {
+                        let sample = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                        samples.push(sample);
+                    }
+                } else {
+                    // 32-bit PCM integer (some microphone drivers return this).
+                    // Interpreting these bytes as IEEE float produces static/garbage.
+                    for chunk in data.chunks_exact(4) {
+                        let sample = i32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                        samples.push(sample as f32 / 2_147_483_648.0);
+                    }
                 }
             }
             24 => {
@@ -414,7 +482,8 @@ impl WasapiAudioCapture {
                     let mut bytes = [0u8; 4];
                     bytes[1..4].copy_from_slice(chunk);
                     let sample = i32::from_le_bytes(bytes);
-                    samples.push(sample as f32 / 8388608.0);
+                    // Bytes are shifted left by 8 bits, so normalise by 2^31
+                    samples.push(sample as f32 / 2_147_483_648.0);
                 }
             }
             _ => {
@@ -442,6 +511,7 @@ impl WasapiAudioCapture {
         audio_client: IAudioClient,
         capture_client: IAudioCaptureClient,
         format: WAVEFORMATEX,
+        is_float: bool,
         is_capturing: Arc<Mutex<bool>>,
         audio_buffer: Arc<Mutex<Vec<f32>>>,
         current_level: Arc<Mutex<f32>>,
@@ -498,7 +568,8 @@ impl WasapiAudioCapture {
                                 let data_slice = std::slice::from_raw_parts(data_ptr, data_size);
 
                                 // Convert to f32 samples
-                                let samples = Self::convert_samples_to_f32(data_slice, &format);
+                                let samples =
+                                    Self::convert_samples_to_f32(data_slice, &format, is_float);
 
                                 // Calculate and update current audio level
                                 let level = Self::calculate_rms_level(&samples);
@@ -835,7 +906,7 @@ impl AudioCapturePort for WasapiAudioCapture {
 
             // Initialize the audio client and get the actual device format
             // This is where the format is detected from the WASAPI device
-            let (format, sample_rate, bits_per_sample) =
+            let (format, sample_rate, bits_per_sample, is_float) =
                 match Self::initialize_audio_client(&audio_client) {
                     Ok(f) => f,
                     Err(e) => {
@@ -854,7 +925,7 @@ impl AudioCapturePort for WasapiAudioCapture {
             *format_info_clone.lock().unwrap() = AudioFormat {
                 sample_rate,     // e.g., 48000 Hz (detected from device)
                 channels,        // e.g., 2 (stereo, detected from device)
-                bits_per_sample, // e.g., 32 bits (float, detected from device)
+                bits_per_sample, // e.g., 32 bits (detected from device)
             };
 
             // Get the capture client
@@ -884,6 +955,7 @@ impl AudioCapturePort for WasapiAudioCapture {
                 audio_client,
                 capture_client,
                 format,
+                is_float,
                 is_capturing_clone,
                 audio_buffer_clone,
                 current_level_clone,
@@ -1019,7 +1091,7 @@ impl AudioCapturePort for WasapiAudioCapture {
                         }
                     };
 
-                let (format, sample_rate, bits_per_sample) =
+                let (format, sample_rate, bits_per_sample, is_float) =
                     match Self::initialize_audio_client(&audio_client) {
                         Ok(f) => f,
                         Err(e) => {
@@ -1078,6 +1150,7 @@ impl AudioCapturePort for WasapiAudioCapture {
                     audio_client,
                     capture_client,
                     format,
+                    is_float,
                     speaker_is_capturing,
                     speaker_buffer_clone,
                     speaker_level,
@@ -1099,6 +1172,9 @@ impl AudioCapturePort for WasapiAudioCapture {
         let mic_is_capturing = Arc::clone(&is_capturing_clone);
         let format_info_clone2 = Arc::clone(&format_info);
         let mic_level = Arc::clone(&self.current_level);
+        // Track mic channel count separately so the mixer can upmix mono→stereo correctly
+        let mic_channels_info: Arc<Mutex<u16>> = Arc::new(Mutex::new(1));
+        let mic_channels_info_clone = Arc::clone(&mic_channels_info);
 
         // Channel and handle for microphone initialization (only created if microphone is specified)
         let (mic_handle, mic_init_rx) = if let Some(mic_idx) = microphone_index {
@@ -1149,7 +1225,7 @@ impl AudioCapturePort for WasapiAudioCapture {
                         }
                     };
 
-                let (format, sample_rate, bits_per_sample) =
+                let (format, sample_rate, bits_per_sample, is_float) =
                     match Self::initialize_microphone_client(&audio_client) {
                         Ok(f) => f,
                         Err(e) => {
@@ -1169,6 +1245,10 @@ impl AudioCapturePort for WasapiAudioCapture {
                 // Update format from microphone only if speaker format not already set
                 // Speaker format takes priority as it's the loopback (system audio) source
                 let channels = format.nChannels;
+
+                // Always record mic channel count for the mixer's mono→stereo upmix logic
+                *mic_channels_info_clone.lock().unwrap() = channels;
+
                 {
                     let mut fmt = format_info_clone2.lock().unwrap();
                     // Only update if still at default (speaker didn't set it)
@@ -1218,6 +1298,7 @@ impl AudioCapturePort for WasapiAudioCapture {
                     audio_client,
                     capture_client,
                     format,
+                    is_float,
                     mic_is_capturing,
                     mic_buffer_clone,
                     mic_level,
@@ -1304,6 +1385,16 @@ impl AudioCapturePort for WasapiAudioCapture {
         let is_capturing_mixer = Arc::clone(&self.is_capturing);
         let mixed_buffer = Arc::clone(&self.audio_buffer);
 
+        // Read channel counts after both threads have initialised.
+        // Speaker format is the master (stored in format_info); mic channels are tracked separately.
+        let speaker_channels = self.format.channels;
+        let mic_channels = *mic_channels_info.lock().unwrap();
+        log::info!(
+            "Mixer starting: speaker {} ch, mic {} ch",
+            speaker_channels,
+            mic_channels
+        );
+
         tokio::spawn(async move {
             let mut total_mixed = 0usize;
             while *is_capturing_mixer.lock().unwrap() {
@@ -1327,18 +1418,23 @@ impl AudioCapturePort for WasapiAudioCapture {
                         mic_samples.len()
                     );
 
-                    // Mix the two streams
-                    let max_len = speaker_samples.len().max(mic_samples.len());
+                    // When mic is mono and speaker is stereo, each mono mic sample must be
+                    // duplicated for both L and R channels before mixing.  Without this the
+                    // mic voice is mixed at double speed and alternates between L and R.
+                    let mic_aligned: Vec<f32> = if speaker_channels == 2 && mic_channels == 1 {
+                        mic_samples.iter().flat_map(|&m| [m, m]).collect()
+                    } else {
+                        mic_samples
+                    };
+
+                    let max_len = speaker_samples.len().max(mic_aligned.len());
                     let mut mixed = Vec::with_capacity(max_len);
 
                     for i in 0..max_len {
-                        let speaker_sample = speaker_samples.get(i).copied().unwrap_or(0.0);
-                        let mic_sample = mic_samples.get(i).copied().unwrap_or(0.0);
-
-                        // Simple mixing: add and divide by 2 (average)
-                        // This prevents clipping while maintaining reasonable levels
-                        let mixed_sample = (speaker_sample + mic_sample) / 2.0;
-                        mixed.push(mixed_sample);
+                        let s = speaker_samples.get(i).copied().unwrap_or(0.0);
+                        let m = mic_aligned.get(i).copied().unwrap_or(0.0);
+                        // Average mix: prevents clipping while maintaining reasonable levels
+                        mixed.push((s + m) / 2.0);
                     }
 
                     // Append to final buffer
